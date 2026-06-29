@@ -22,6 +22,7 @@ export const articles = pgTable("articles", {
   title: varchar("title", { length: 200 }).notNull(),
   author: varchar("author", { length: 50 }).notNull(),
   description: text("description"),
+  content: text("content"),
   cover_key: varchar("cover_key", { length: 500 }),
   pdf_key: varchar("pdf_key", { length: 500 }),
   sort_order: integer("sort_order").default(0).notNull(),

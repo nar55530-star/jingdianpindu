@@ -27,6 +27,7 @@ interface Article {
   title: string;
   author: string;
   description: string | null;
+  content: string | null;
   cover_key: string | null;
   pdf_key: string | null;
 }
@@ -258,6 +259,23 @@ export default function ArticleDetailPage() {
           <p className="text-muted-foreground leading-relaxed">
             {article.description || '暂无简介'}
           </p>
+
+          {/* 文章正文 */}
+          {article.content && (
+            <div className="mt-6 rounded-lg border border-border bg-card p-6">
+              <div className="mb-4 flex items-center gap-2 text-primary">
+                <BookOpen className="h-5 w-5" />
+                <h2 className="font-serif text-lg font-semibold">原文选读</h2>
+              </div>
+              <div className="prose prose-neutral max-w-none">
+                {article.content.split('\n\n').map((paragraph, idx) => (
+                  <p key={idx} className="mb-4 text-foreground leading-[1.9] text-[15px] indent-[2em] font-serif">
+                    {paragraph.trim()}
+                  </p>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* 操作按钮 */}
           <div className="mt-6 flex flex-wrap gap-3">

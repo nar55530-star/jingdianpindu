@@ -19,7 +19,7 @@ export async function GET() {
 // POST /api/articles - 创建篇目（管理员）
 export async function POST(request: NextRequest) {
   const body = await request.json();
-  const { title, author, description, cover_key, pdf_key, sort_order } = body;
+  const { title, author, description, content, cover_key, pdf_key, sort_order } = body;
 
   if (!title || !author) {
     return NextResponse.json({ error: '标题和作者不能为空' }, { status: 400 });
@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
   const client = getSupabaseClient();
   const { data, error } = await client
     .from('articles')
-    .insert({ title, author, description, cover_key, pdf_key, sort_order: sort_order || 0 })
+    .insert({ title, author, description, content, cover_key, pdf_key, sort_order: sort_order || 0 })
     .select()
     .single();
 
