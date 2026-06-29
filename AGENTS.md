@@ -1,4 +1,8 @@
-# 项目上下文
+# AGENTS.md
+
+## 项目概览
+
+经典品读学习交流平台 —— 面向学生群体的经典文献阅读与心得交流网站。
 
 ### 版本技术栈
 
@@ -7,59 +11,80 @@
 - **Language**: TypeScript 5
 - **UI 组件**: shadcn/ui (基于 Radix UI)
 - **Styling**: Tailwind CSS 4
+- **Database**: Supabase (PostgreSQL)
+- **Storage**: S3 兼容对象存储 (coze-coding-dev-sdk)
 
 ## 目录结构
 
 ```
 ├── public/                 # 静态资源
-├── scripts/                # 构建与启动脚本
-│   ├── build.sh            # 构建脚本
-│   ├── dev.sh              # 开发环境启动脚本
-│   ├── prepare.sh          # 预处理脚本
-│   └── start.sh            # 生产环境启动脚本
 ├── src/
 │   ├── app/                # 页面路由与布局
-│   ├── components/ui/      # Shadcn UI 组件库
+│   │   ├── page.tsx        # 首页（经典篇目展示）
+│   │   ├── layout.tsx      # 根布局（导航栏、用户上下文）
+│   │   ├── globals.css     # 全局样式与 Design Tokens
+│   │   ├── article/[id]/   # 篇目详情页
+│   │   ├── forum/          # 心得论坛页
+│   │   ├── quotes/         # 金句墙页
+│   │   ├── profile/        # 个人中心页
+│   │   ├── admin/          # 管理后台页
+│   │   └── api/            # API 路由
+│   │       ├── users/      # 用户 CRUD
+│   │       ├── articles/   # 篇目 CRUD
+│   │       ├── reading-records/ # 阅读打卡
+│   │       ├── posts/      # 心得帖子 CRUD
+│   │       ├── comments/   # 评论 CRUD
+│   │       ├── post-likes/ # 帖子点赞
+│   │       ├── golden-quotes/ # 金句 CRUD
+│   │       ├── quote-likes/ # 金句点赞
+│   │       ├── favorites/  # 收藏 CRUD
+│   │       ├── announcements/ # 公告 CRUD
+│   │       ├── upload/     # 文件上传
+│   │       └── seed/       # 种子数据初始化
+│   ├── components/         # 组件
+│   │   ├── ui/             # shadcn/ui 组件库
+│   │   ├── navbar.tsx      # 顶部导航栏
+│   │   └── nickname-dialog.tsx # 昵称设置弹窗
 │   ├── hooks/              # 自定义 Hooks
-│   ├── lib/                # 工具库
-│   │   └── utils.ts        # 通用工具函数 (cn)
-│   └── server.ts           # 自定义服务端入口
-├── next.config.ts          # Next.js 配置
-├── package.json            # 项目依赖管理
-└── tsconfig.json           # TypeScript 配置
+│   ├── lib/
+│   │   ├── utils.ts        # 通用工具函数 (cn)
+│   │   └── user-context.tsx # 用户上下文（localStorage 持久化）
+│   └── storage/
+│       └── database/
+│           ├── supabase-client.ts # Supabase 客户端
+│           └── shared/
+│               └── schema.ts  # Drizzle 数据库 Schema
+├── next.config.ts
+├── package.json
+└── tsconfig.json
 ```
 
-- 项目文件（如 app 目录、pages 目录、components 等）默认初始化到 `src/` 目录下。
+## 数据库设计
 
-## 包管理规范
+11 张表：users, articles, reading_records, posts, comments, post_likes, golden_quotes, quote_likes, favorites, announcements, health_check
 
-**仅允许使用 pnpm** 作为包管理器，**严禁使用 npm 或 yarn**。
-**常用命令**：
-- 安装依赖：`pnpm add <package>`
-- 安装开发依赖：`pnpm add -D <package>`
-- 安装所有依赖：`pnpm install`
-- 移除依赖：`pnpm remove <package>`
+所有表均启用 RLS，使用 `public readable + public writable` 策略（无 Auth 系统）。Supabase 客户端默认使用 service_role_key 绕过 RLS。
 
-## 开发规范
+## 构建与测试命令
 
-### 编码规范
+- 安装依赖：`pnpm install`
+- 开发：`pnpm run dev`
+- 构建：`pnpm run build`
+- 类型检查：`pnpm ts-check`
+- Lint：`pnpm lint`
+- 启动生产：`pnpm run start`
 
-- 默认按 TypeScript `strict` 心智写代码；优先复用当前作用域已声明的变量、函数、类型和导入，禁止引用未声明标识符或拼错变量名。
-- 禁止隐式 `any` 和 `as any`；函数参数、返回值、解构项、事件对象、`catch` 错误在使用前应有明确类型或先完成类型收窄，并清理未使用的变量和导入。
+## 编码规范
 
-### next.config 配置规范
+- TypeScript strict 模式
+- 禁止隐式 any
+- 函数内部定义的异步函数在 useEffect 中使用时，必须用 useCallback 包裹，防止 before-declaration 错误
+- 用户身份通过 localStorage + Supabase 查询实现，无 Auth 系统
+- 管理员通过 users.is_admin 字段标识
 
-- 配置的路径不要写死绝对路径，必须使用 path.resolve(__dirname, ...)、import.meta.dirname 或 process.cwd() 动态拼接。
+## UI 规范
 
-### Hydration 问题防范
-
-1. 严禁在 JSX 渲染逻辑中直接使用 typeof window、Date.now()、Math.random() 等动态数据。**必须使用 'use client' 并配合 useEffect + useState 确保动态内容仅在客户端挂载后渲染**；同时严禁非法 HTML 嵌套（如 <p> 嵌套 <div>）。
-2. **禁止使用 head 标签**，优先使用 metadata，详见文档：https://nextjs.org/docs/app/api-reference/functions/generate-metadata
-   1. 三方 CSS、字体等资源可在 `globals.css` 中顶部通过 `@import` 引入或使用 next/font
-   2. preload, preconnect, dns-prefetch 通过 ReactDOM 的 preload、preconnect、dns-prefetch 方法引入
-   3. json-ld 可阅读 https://nextjs.org/docs/app/guides/json-ld
-
-## UI 设计与组件规范 (UI & Styling Standards)
-
-- 模板默认预装核心组件库 `shadcn/ui`，位于`src/components/ui/`目录下
-- Next.js 项目**必须默认**采用 shadcn/ui 组件、风格和规范，**除非用户指定用其他的组件和规范。**
+- 采用 shadcn/ui 组件和风格
+- 字体：Noto Serif SC (标题/正文), ZCOOL XiaoWei (金句引用)
+- 色彩：书院暖色系，主色 #8B2500，背景 #FAF6F1
+- 详见 DESIGN.md
