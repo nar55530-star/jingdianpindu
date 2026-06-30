@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>金句墙 - 经典品读</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link href="https://fonts.googleapis.cn/css2?family=Noto+Serif+SC:wght@400;600;700&family=ZCOOL+XiaoWei&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="bg-[var(--bg)] text-[var(--fg)] min-h-screen">
+  <div id="navbar"></div>
+
+  <main class="max-w-4xl mx-auto px-4 py-8">
+    <h1 class="text-2xl font-bold text-[var(--primary)] mb-6" style="font-family:'Noto Serif SC',serif;">金句墙</h1>
+
+    <!-- 筛选 -->
+    <div class="flex flex-wrap gap-3 mb-6">
+      <select id="article-filter" class="border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:border-[var(--primary)]">
+        <option value="">全部篇目</option>
+      </select>
+    </div>
+
+    <!-- 发布金句 -->
+    <div class="bg-white rounded-xl border border-[var(--border)] p-6 mb-8" id="quote-form" style="display:none">
+      <h3 class="font-bold text-[var(--fg)] mb-4" style="font-family:'Noto Serif SC',serif;">摘录金句</h3>
+      <select id="quote-article-select" class="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm mb-3 bg-white focus:outline-none focus:border-[var(--primary)]">
+        <option value="">选择篇目</option>
+      </select>
+      <textarea id="quote-text" rows="2" class="w-full border border-[var(--border)] rounded-lg p-3 text-sm mb-3 focus:outline-none focus:border-[var(--primary)] resize-none bg-[var(--bg)]" placeholder="摘录原文中的经典语句..."></textarea>
+      <input id="quote-reflection" class="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm mb-3 bg-white focus:outline-none focus:border-[var(--primary)]" placeholder="你的感悟（选填）">
+      <button id="submit-quote" class="bg-[var(--primary)] text-[var(--primary-fg)] px-6 py-2 rounded-lg text-sm hover:opacity-90 transition-opacity">发布金句</button>
+    </div>
+
+    <!-- 金句列表 -->
+    <div id="quotes-list"></div>
+  </main>
+
+  <script src="js/app.js"></script>
+  <script src="js/components.js"></script>
+  <script>
+    let likedQuoteIds = new Set();
+
+    async function initQuotesPage() {
+      await initApp();
+      document.getElementById('navbar').innerHTML = renderNavbar();
+      highlightNav('quotes');
+
+      const { data: articles } = await supabase.from('articles').select('*').order('sort_order', { ascending: true });
+      if (articles) {
+        const filterEl = document.getElementById('article-filter');
+        const selectEl = document.getElementById('quote-article-select');
+        articles.forEach(a => {
+          filterEl.innerHTML += `<option value="${a.id}">${a.title}</option>`;
+          selectEl.innerHTML += `<option value="${a.id}">${a.title}</option>`;
+        });
+      }
+
+      const params = new URLSearchParams(window.location.search);
+      const preselected = params.get('article_id');
+      if (preselected) {
+        document.getElementById('article-filter').value = preselected;
+        document.getElementById('quote-article-select').value = preselected;
+      }
+
+      if (currentUser) {
+        document.getElementById('quote-form').style.display = 'block';
+        const { data: likes } = await supabase.from('quote_likes').select('quote_id').eq('user_id', currentUser.id);
+        if (likes) likes.forEach(l => likedQuoteIds.add(l.quote_id));
+      }
+
+      await loadQuotes();
+      document.getElementById('article-filter').addEventListener('change', loadQuotes);
+    }
+
+    async function loadQuotes() {
+      const articleId = document.getElementById('article-filter').value;
+      let query = supabase.from('golden_quotes').select('*, users(nickname), articles(title, author)').order('created_at', { ascending: false });
+      if (articleId) query = query.eq('article_id', articleId);
+      const { data: quotes } = await query;
+
+      const container = document.getElementById('quotes-list');
+      if (!quotes || quotes.length === 0) {
+        container.innerHTML = '<p class="text-[var(--muted)] text-center py-12">暂无金句，来摘录第一条吧</p>';
+        return;
+      }
+
+      container.innerHTML = quotes.map(q => {
+        const nick = Array.isArray(q.users) ? (q.users[0]?.nickname || '未知') : (q.users?.nickname || '未知');
+        const article = Array.isArray(q.articles) ? q.articles[0] : q.articles;
+        const articleTitle = article?.title || '';
+        const articleAuthor = article?.author || '';
+        const liked = likedQuoteIds.has(q.id);
+        return `
+        <div class="bg-[#FFF8F0] rounded-xl border border-[var(--border)] p-6 mb-4">
+          <p class="text-lg text-[var(--fg)] leading-relaxed mb-3" style="font-family:'ZCOOL XiaoWei',serif;">"${q.quote}"</p>
+          ${q.reflection ? `<p class="text-sm text-[var(--muted)] italic mb-3">—— ${q.reflection}</p>` : ''}
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <span class="text-xs text-[var(--secondary)]">${articleAuthor}《${articleTitle}》</span>
+              <span class="text-xs text-[var(--muted)]">· 摘录者：${nick}</span>
+            </div>
+            <button onclick="toggleQuoteLike('${q.id}')" class="text-xs transition-colors ${liked ? 'text-[var(--accent)]' : 'text-[var(--muted)] hover:text-[var(--accent)]'}">
+              ${liked ? '❤️' : '🤍'} ${q.likes_count || 0}
+            </button>
+          </div>
+        </div>`;
+      }).join('');
+    }
+
+    async function toggleQuoteLike(quoteId) {
+      if (!currentUser) { alert('请先设置昵称'); return; }
+      if (likedQuoteIds.has(quoteId)) {
+        const { data: existing } = await supabase.from('quote_likes').select('id').eq('user_id', currentUser.id).eq('quote_id', quoteId).maybeSingle();
+        if (existing) { await supabase.from('quote_likes').delete().eq('id', existing.id); likedQuoteIds.delete(quoteId); }
+      } else {
+        await supabase.from('quote_likes').insert({ user_id: currentUser.id, quote_id: quoteId });
+        likedQuoteIds.add(quoteId);
+      }
+      const { count } = await supabase.from('quote_likes').select('*', { count: 'exact', head: true }).eq('quote_id', quoteId);
+      await supabase.from('golden_quotes').update({ likes_count: count }).eq('id', quoteId);
+      await loadQuotes();
+    }
+
+    document.addEventListener('click', async function(e) {
+      if (e.target.id === 'submit-quote') {
+        if (!currentUser) { alert('请先设置昵称'); return; }
+        const articleId = document.getElementById('quote-article-select').value;
+        const quote = document.getElementById('quote-text').value.trim();
+        const reflection = document.getElementById('quote-reflection').value.trim();
+        if (!articleId) { alert('请选择篇目'); return; }
+        if (!quote) { alert('请输入金句内容'); return; }
+        await supabase.from('golden_quotes').insert({ user_id: currentUser.id, article_id: parseInt(articleId), quote, reflection: reflection || null });
+        document.getElementById('quote-text').value = '';
+        document.getElementById('quote-reflection').value = '';
+        await loadQuotes();
+      }
+    });
+
+    initQuotesPage();
+  </script>
+</body>
+</html>

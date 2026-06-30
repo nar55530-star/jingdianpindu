@@ -1,13 +1,10 @@
 [project]
-requires = [ "nodejs-24" ]
-template = "nextjs"
-version = "0.0.28"
-appliedPatches = [ ]
+entrypoint = "index.html"
 
 [dev]
-build = [ "pnpm", "install" ]
-run = [ "pnpm", "run", "dev" ]
+build = []
+run = ["sh", "-c", "npx server -l ${DEPLOY_RUN_PORT}"]
 
 [deploy]
-build = [ "pnpm", "run", "build" ]
-run = [ "pnpm", "run", "start" ]
+build = []
+run = ["sh", "-c", "npx server -l ${DEPLOY_RUN_PORT}"]

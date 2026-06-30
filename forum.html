@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>心得论坛 - 经典品读</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link href="https://fonts.googleapis.cn/css2?family=Noto+Serif+SC:wght@400;600;700&family=ZCOOL+XiaoWei&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="bg-[var(--bg)] text-[var(--fg)] min-h-screen">
+  <div id="navbar"></div>
+
+  <main class="max-w-4xl mx-auto px-4 py-8">
+    <h1 class="text-2xl font-bold text-[var(--primary)] mb-6" style="font-family:'Noto Serif SC',serif;">心得论坛</h1>
+
+    <!-- 筛选 -->
+    <div class="flex flex-wrap gap-3 mb-6">
+      <select id="article-filter" class="border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:border-[var(--primary)]">
+        <option value="">全部篇目</option>
+      </select>
+    </div>
+
+    <!-- 发帖 -->
+    <div class="bg-white rounded-xl border border-[var(--border)] p-6 mb-8" id="post-form" style="display:none">
+      <h3 class="font-bold text-[var(--fg)] mb-4" style="font-family:'Noto Serif SC',serif;">发表心得</h3>
+      <select id="post-article-select" class="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm mb-3 bg-white focus:outline-none focus:border-[var(--primary)]">
+        <option value="">选择篇目</option>
+      </select>
+      <textarea id="post-content" rows="4" class="w-full border border-[var(--border)] rounded-lg p-3 text-sm focus:outline-none focus:border-[var(--primary)] resize-none bg-[var(--bg)]" placeholder="写下你的阅读感悟..."></textarea>
+      <button id="submit-post" class="mt-3 bg-[var(--primary)] text-[var(--primary-fg)] px-6 py-2 rounded-lg text-sm hover:opacity-90 transition-opacity">发布</button>
+    </div>
+
+    <!-- 帖子列表 -->
+    <div id="posts-list"></div>
+  </main>
+
+  <script src="js/app.js"></script>
+  <script src="js/components.js"></script>
+  <script>
+    let articlesMap = {};
+    let likedPostIds = new Set();
+
+    async function initForumPage() {
+      await initApp();
+      document.getElementById('navbar').innerHTML = renderNavbar();
+      highlightNav('forum');
+
+      // 加载篇目列表
+      const { data: articles } = await supabase.from('articles').select('*').order('sort_order', { ascending: true });
+      if (articles) {
+        const filterEl = document.getElementById('article-filter');
+        const selectEl = document.getElementById('post-article-select');
+        articles.forEach(a => {
+          articlesMap[a.id] = a;
+          filterEl.innerHTML += `<option value="${a.id}">${a.title}</option>`;
+          selectEl.innerHTML += `<option value="${a.id}">${a.title}</option>`;
+        });
+      }
+
+      // URL参数筛选
+      const params = new URLSearchParams(window.location.search);
+      const preselectedArticle = params.get('article_id');
+      if (preselectedArticle) {
+        document.getElementById('article-filter').value = preselectedArticle;
+        document.getElementById('post-article-select').value = preselectedArticle;
+      }
+
+      if (currentUser) {
+        document.getElementById('post-form').style.display = 'block';
+        const { data: likes } = await supabase.from('post_likes').select('post_id').eq('user_id', currentUser.id);
+        if (likes) likes.forEach(l => likedPostIds.add(l.post_id));
+      }
+
+      await loadPosts();
+
+      // 筛选变化
+      document.getElementById('article-filter').addEventListener('change', loadPosts);
+    }
+
+    async function loadPosts() {
+      const articleId = document.getElementById('article-filter').value;
+      let query = supabase.from('posts').select('*, users(nickname), articles(title)').order('is_pinned', { ascending: false }).order('created_at', { ascending: false });
+      if (articleId) query = query.eq('article_id', articleId);
+      const { data: posts } = await query;
+
+      const container = document.getElementById('posts-list');
+      if (!posts || posts.length === 0) {
+        container.innerHTML = '<p class="text-[var(--muted)] text-center py-12">暂无心得，来写第一条吧</p>';
+        return;
+      }
+
+      container.innerHTML = posts.map(p => {
+        const nick = Array.isArray(p.users) ? (p.users[0]?.nickname || '未知') : (p.users?.nickname || '未知');
+        const articleTitle = Array.isArray(p.articles) ? (p.articles[0]?.title || '') : (p.articles?.title || '');
+        const time = new Date(p.created_at).toLocaleDateString('zh-CN');
+        const liked = likedPostIds.has(p.id);
+        return `
+        <div class="bg-white rounded-xl border border-[var(--border)] p-5 mb-4 ${p.is_pinned ? 'border-l-4 border-l-[var(--accent)]' : ''}">
+          <div class="flex items-center justify-between mb-2">
+            <div class="flex items-center gap-2">
+              <span class="text-sm font-semibold text-[var(--primary)]">${nick}</span>
+              ${articleTitle ? `<span class="text-xs bg-[var(--border)] px-2 py-0.5 rounded text-[var(--muted)]">${articleTitle}</span>` : ''}
+              ${p.is_pinned ? '<span class="text-xs bg-[var(--accent)] text-white px-2 py-0.5 rounded">置顶</span>' : ''}
+            </div>
+            <span class="text-xs text-[var(--muted)]">${time}</span>
+          </div>
+          <p class="text-sm text-[var(--fg)] leading-relaxed mb-3">${p.content}</p>
+          <div class="flex items-center gap-4">
+            <button onclick="toggleLike('${p.id}')" class="text-xs transition-colors ${liked ? 'text-[var(--accent)]' : 'text-[var(--muted)] hover:text-[var(--accent)]'}">
+              ${liked ? '❤️' : '🤍'} ${p.likes_count || 0}
+            </button>
+            <button onclick="toggleComments('${p.id}')" class="text-xs text-[var(--muted)] hover:text-[var(--primary)] transition-colors">💬 ${p.comments_count || 0}</button>
+          </div>
+          <div id="comments-${p.id}" style="display:none" class="mt-3 pt-3 border-t border-[var(--border)]"></div>
+        </div>`;
+      }).join('');
+    }
+
+    async function toggleLike(postId) {
+      if (!currentUser) { alert('请先设置昵称'); return; }
+      if (likedPostIds.has(postId)) {
+        const { data: existing } = await supabase.from('post_likes').select('id').eq('user_id', currentUser.id).eq('post_id', postId).maybeSingle();
+        if (existing) { await supabase.from('post_likes').delete().eq('id', existing.id); likedPostIds.delete(postId); }
+      } else {
+        await supabase.from('post_likes').insert({ user_id: currentUser.id, post_id: postId });
+        likedPostIds.add(postId);
+      }
+      // 更新计数
+      const { count } = await supabase.from('post_likes').select('*', { count: 'exact', head: true }).eq('post_id', postId);
+      await supabase.from('posts').update({ likes_count: count }).eq('id', postId);
+      await loadPosts();
+    }
+
+    let openCommentId = null;
+    async function toggleComments(postId) {
+      const container = document.getElementById('comments-' + postId);
+      if (openCommentId === postId) { container.style.display = 'none'; openCommentId = null; return; }
+      if (openCommentId) { document.getElementById('comments-' + openCommentId).style.display = 'none'; }
+      openCommentId = postId;
+
+      const { data: comments } = await supabase.from('comments').select('*, users(nickname)').eq('post_id', postId).order('created_at', { ascending: true });
+      let html = '';
+      if (comments && comments.length > 0) {
+        html += comments.map(c => {
+          const nick = Array.isArray(c.users) ? (c.users[0]?.nickname || '未知') : (c.users?.nickname || '未知');
+          return `<div class="py-2"><span class="text-xs font-semibold text-[var(--primary)]">${nick}</span><p class="text-xs text-[var(--fg)] mt-1">${c.content}</p></div>`;
+        }).join('');
+      }
+      html += `<div class="flex gap-2 mt-2"><input id="comment-input-${postId}" class="flex-1 border border-[var(--border)] rounded px-3 py-1.5 text-xs focus:outline-none focus:border-[var(--primary)] bg-[var(--bg)]" placeholder="写评论..."><button onclick="submitComment('${postId}')" class="bg-[var(--primary)] text-[var(--primary-fg)] px-3 py-1.5 rounded text-xs hover:opacity-90">发送</button></div>`;
+      container.innerHTML = html;
+      container.style.display = 'block';
+    }
+
+    async function submitComment(postId) {
+      if (!currentUser) { alert('请先设置昵称'); return; }
+      const input = document.getElementById('comment-input-' + postId);
+      if (!input.value.trim()) return;
+      await supabase.from('comments').insert({ post_id: postId, user_id: currentUser.id, content: input.value.trim() });
+      const { count } = await supabase.from('comments').select('*', { count: 'exact', head: true }).eq('post_id', postId);
+      await supabase.from('posts').update({ comments_count: count }).eq('id', postId);
+      openCommentId = null;
+      await loadPosts();
+    }
+
+    document.addEventListener('click', async function(e) {
+      if (e.target.id === 'submit-post') {
+        if (!currentUser) { alert('请先设置昵称'); return; }
+        const articleId = document.getElementById('post-article-select').value;
+        const content = document.getElementById('post-content').value.trim();
+        if (!articleId) { alert('请选择篇目'); return; }
+        if (!content) { alert('请输入心得内容'); return; }
+        await supabase.from('posts').insert({ user_id: currentUser.id, article_id: parseInt(articleId), content });
+        document.getElementById('post-content').value = '';
+        await loadPosts();
+      }
+    });
+
+    initForumPage();
+  </script>
+</body>
+</html>

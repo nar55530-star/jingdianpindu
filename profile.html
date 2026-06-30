@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>个人中心 - 经典品读</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link href="https://fonts.googleapis.cn/css2?family=Noto+Serif+SC:wght@400;600;700&family=ZCOOL+XiaoWei&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="bg-[var(--bg)] text-[var(--fg)] min-h-screen">
+  <div id="navbar"></div>
+
+  <main class="max-w-4xl mx-auto px-4 py-8">
+    <div id="not-logged-in" style="display:none" class="text-center py-20">
+      <p class="text-[var(--muted)] mb-4">请先设置昵称</p>
+      <button onclick="showNicknameDialog()" class="bg-[var(--primary)] text-[var(--primary-fg)] px-6 py-2 rounded-lg text-sm hover:opacity-90">设置昵称</button>
+    </div>
+
+    <div id="profile-content" style="display:none">
+      <!-- 用户信息 -->
+      <div class="bg-white rounded-xl border border-[var(--border)] p-6 mb-6">
+        <div class="flex items-center justify-between">
+          <div>
+            <h1 class="text-xl font-bold text-[var(--fg)]" style="font-family:'Noto Serif SC',serif;" id="user-nickname"></h1>
+            <p class="text-sm text-[var(--muted)] mt-1" id="user-join-date"></p>
+          </div>
+          <button onclick="showNicknameDialog()" class="text-sm text-[var(--primary)] hover:underline">修改昵称</button>
+        </div>
+      </div>
+
+      <!-- 阅读进度 -->
+      <div class="bg-white rounded-xl border border-[var(--border)] p-6 mb-6">
+        <h2 class="font-bold text-[var(--fg)] mb-4" style="font-family:'Noto Serif SC',serif;">阅读进度</h2>
+        <div class="flex items-center gap-4 mb-3">
+          <div class="flex-1 bg-[var(--border)] rounded-full h-3">
+            <div id="progress-bar" class="bg-[var(--primary)] rounded-full h-3 transition-all duration-500" style="width:0%"></div>
+          </div>
+          <span id="progress-text" class="text-sm font-semibold text-[var(--primary)]"></span>
+        </div>
+        <div id="badges" class="flex flex-wrap gap-2 mt-4"></div>
+      </div>
+
+      <!-- 标签页 -->
+      <div class="flex gap-1 mb-6 border-b border-[var(--border)]">
+        <button onclick="switchTab('posts')" class="tab-btn px-4 py-2 text-sm font-medium border-b-2 border-transparent" data-tab="posts">我的心得</button>
+        <button onclick="switchTab('quotes')" class="tab-btn px-4 py-2 text-sm font-medium border-b-2 border-transparent" data-tab="quotes">我的金句</button>
+        <button onclick="switchTab('favorites')" class="tab-btn px-4 py-2 text-sm font-medium border-b-2 border-transparent" data-tab="favorites">我的收藏</button>
+      </div>
+
+      <div id="tab-content"></div>
+    </div>
+  </main>
+
+  <script src="js/app.js"></script>
+  <script src="js/components.js"></script>
+  <script>
+    const BADGES = [
+      { count: 1, name: '初读者', icon: '📖' },
+      { count: 2, name: '思考者', icon: '💡' },
+      { count: 3, name: '品读者', icon: '📚' },
+      { count: 4, name: '经典达人', icon: '🏆' },
+      { count: 5, name: '阅读先锋', icon: '⭐' },
+      { count: 6, name: '经典品读大师', icon: '👑' }
+    ];
+
+    let allArticles = {};
+
+    async function initProfilePage() {
+      await initApp();
+      document.getElementById('navbar').innerHTML = renderNavbar();
+      highlightNav('profile');
+
+      if (!currentUser) {
+        document.getElementById('not-logged-in').style.display = 'block';
+        return;
+      }
+
+      document.getElementById('profile-content').style.display = 'block';
+      document.getElementById('user-nickname').textContent = currentUser.nickname;
+      document.getElementById('user-join-date').textContent = '加入于 ' + new Date(currentUser.created_at).toLocaleDateString('zh-CN');
+
+      // 加载篇目
+      const { data: articles } = await supabase.from('articles').select('*').order('sort_order', { ascending: true });
+      if (articles) articles.forEach(a => allArticles[a.id] = a);
+
+      // 阅读进度
+      const { data: records } = await supabase.from('reading_records').select('article_id').eq('user_id', currentUser.id);
+      const totalArticles = Object.keys(allArticles).length;
+      const readCount = records ? records.length : 0;
+      const percent = totalArticles > 0 ? Math.round(readCount / totalArticles * 100) : 0;
+      document.getElementById('progress-bar').style.width = percent + '%';
+      document.getElementById('progress-text').textContent = `${readCount} / ${totalArticles} 篇`;
+
+      // 徽章
+      const badgesContainer = document.getElementById('badges');
+      badgesContainer.innerHTML = BADGES.filter(b => readCount >= b.count).map(b =>
+        `<span class="inline-flex items-center gap-1 bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-3 py-1 text-xs font-medium">${b.icon} ${b.name}</span>`
+      ).join('') || '<span class="text-xs text-[var(--muted)]">完成阅读即可获得徽章</span>';
+
+      switchTab('posts');
+    }
+
+    function switchTab(tab) {
+      document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.classList.toggle('text-[var(--primary)]', btn.dataset.tab === tab);
+        btn.classList.toggle('border-[var(--primary)]', btn.dataset.tab === tab);
+        btn.classList.toggle('text-[var(--muted)]', btn.dataset.tab !== tab);
+      });
+
+      const container = document.getElementById('tab-content');
+      if (tab === 'posts') loadMyPosts(container);
+      else if (tab === 'quotes') loadMyQuotes(container);
+      else if (tab === 'favorites') loadMyFavorites(container);
+    }
+
+    async function loadMyPosts(container) {
+      const { data: posts } = await supabase.from('posts').select('*, articles(title)').eq('user_id', currentUser.id).order('created_at', { ascending: false });
+      if (!posts || posts.length === 0) { container.innerHTML = '<p class="text-[var(--muted)] text-center py-8">暂无心得</p>'; return; }
+      container.innerHTML = posts.map(p => {
+        const articleTitle = Array.isArray(p.articles) ? (p.articles[0]?.title || '') : (p.articles?.title || '');
+        return `<div class="bg-white rounded-xl border border-[var(--border)] p-5 mb-4">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-xs bg-[var(--border)] px-2 py-0.5 rounded text-[var(--muted)]">${articleTitle}</span>
+            <span class="text-xs text-[var(--muted)]">${new Date(p.created_at).toLocaleDateString('zh-CN')}</span>
+          </div>
+          <p class="text-sm text-[var(--fg)] leading-relaxed">${p.content}</p>
+          <div class="flex items-center gap-4 mt-3">
+            <span class="text-xs text-[var(--muted)]">❤️ ${p.likes_count || 0}</span>
+            <span class="text-xs text-[var(--muted)]">💬 ${p.comments_count || 0}</span>
+          </div>
+        </div>`;
+      }).join('');
+    }
+
+    async function loadMyQuotes(container) {
+      const { data: quotes } = await supabase.from('golden_quotes').select('*, articles(title, author)').eq('user_id', currentUser.id).order('created_at', { ascending: false });
+      if (!quotes || quotes.length === 0) { container.innerHTML = '<p class="text-[var(--muted)] text-center py-8">暂无金句</p>'; return; }
+      container.innerHTML = quotes.map(q => {
+        const article = Array.isArray(q.articles) ? q.articles[0] : q.articles;
+        return `<div class="bg-[#FFF8F0] rounded-xl border border-[var(--border)] p-5 mb-4">
+          <p class="text-base text-[var(--fg)] leading-relaxed mb-2" style="font-family:'ZCOOL XiaoWei',serif;">"${q.quote}"</p>
+          ${q.reflection ? `<p class="text-sm text-[var(--muted)] italic">—— ${q.reflection}</p>` : ''}
+          <span class="text-xs text-[var(--secondary)]">${article?.author || ''}《${article?.title || ''}》</span>
+          <span class="text-xs text-[var(--muted)] ml-2">❤️ ${q.likes_count || 0}</span>
+        </div>`;
+      }).join('');
+    }
+
+    async function loadMyFavorites(container) {
+      const { data: favs } = await supabase.from('favorites').select('*').eq('user_id', currentUser.id).order('created_at', { ascending: false });
+      if (!favs || favs.length === 0) { container.innerHTML = '<p class="text-[var(--muted)] text-center py-8">暂无收藏</p>'; return; }
+      container.innerHTML = favs.map(f => {
+        if (f.target_type === 'article') {
+          const article = allArticles[parseInt(f.target_id)];
+          return `<div class="bg-white rounded-xl border border-[var(--border)] p-5 mb-4">
+            <a href="article.html?id=${f.target_id}" class="text-sm font-semibold text-[var(--primary)] hover:underline">${article ? article.title : '篇目 #' + f.target_id}</a>
+            ${article ? `<p class="text-xs text-[var(--muted)] mt-1">${article.author}</p>` : ''}
+          </div>`;
+        }
+        return `<div class="bg-white rounded-xl border border-[var(--border)] p-5 mb-4"><span class="text-sm text-[var(--muted)]">${f.target_type} #${f.target_id}</span></div>`;
+      }).join('');
+    }
+
+    initProfilePage();
+  </script>
+</body>
+</html>

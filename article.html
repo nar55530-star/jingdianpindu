@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>篇目详情 - 经典品读</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link href="https://fonts.googleapis.cn/css2?family=Noto+Serif+SC:wght@400;600;700&family=ZCOOL+XiaoWei&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="bg-[var(--bg)] text-[var(--fg)] min-h-screen">
+  <div id="navbar"></div>
+
+  <main class="max-w-4xl mx-auto px-4 py-8">
+    <!-- 文章信息 -->
+    <div class="mb-8">
+      <a href="index.html" class="text-sm text-[var(--muted)] hover:text-[var(--primary)] mb-4 inline-block">← 返回首页</a>
+      <div id="article-header"></div>
+    </div>
+
+    <!-- 正文内容 -->
+    <div class="bg-white rounded-xl border border-[var(--border)] p-8 mb-8" id="article-content" style="display:none">
+      <h2 class="text-xl font-bold text-[var(--primary)] mb-6" style="font-family:'Noto Serif SC',serif;">原文选读</h2>
+      <div id="content-body" class="article-content"></div>
+    </div>
+
+    <!-- 操作按钮 -->
+    <div class="flex flex-wrap gap-3 mb-8" id="action-buttons"></div>
+
+    <!-- 发表心得 -->
+    <div class="bg-white rounded-xl border border-[var(--border)] p-6 mb-8" id="post-form-section" style="display:none">
+      <h3 class="font-bold text-[var(--fg)] mb-4" style="font-family:'Noto Serif SC',serif;">发表心得</h3>
+      <textarea id="post-content" rows="4" class="w-full border border-[var(--border)] rounded-lg p-3 text-sm focus:outline-none focus:border-[var(--primary)] resize-none bg-[var(--bg)]" placeholder="写下你的阅读感悟..."></textarea>
+      <button id="submit-post" class="mt-3 bg-[var(--primary)] text-[var(--primary-fg)] px-6 py-2 rounded-lg text-sm hover:opacity-90 transition-opacity">发布心得</button>
+    </div>
+
+    <!-- 心得列表 -->
+    <div class="mb-8">
+      <h3 class="font-bold text-[var(--fg)] mb-4" style="font-family:'Noto Serif SC',serif;">阅读心得</h3>
+      <div id="posts-list"></div>
+    </div>
+
+    <!-- 金句摘录 -->
+    <div>
+      <h3 class="font-bold text-[var(--fg)] mb-4" style="font-family:'Noto Serif SC',serif;">金句摘录</h3>
+      <div id="quotes-list"></div>
+    </div>
+  </main>
+
+  <script src="js/app.js"></script>
+  <script src="js/components.js"></script>
+  <script>
+    let articleId = null;
+    let isRead = false;
+    let isFavorited = false;
+
+    async function initArticlePage() {
+      await initApp();
+      document.getElementById('navbar').innerHTML = renderNavbar();
+      highlightNav('');
+
+      const params = new URLSearchParams(window.location.search);
+      articleId = parseInt(params.get('id'));
+      if (!articleId) { window.location.href = 'index.html'; return; }
+
+      // 加载篇目
+      const { data: article } = await supabase.from('articles').select('*').eq('id', articleId).single();
+      if (!article) { window.location.href = 'index.html'; return; }
+
+      document.title = article.title + ' - 经典品读';
+
+      // 渲染头部
+      const gradients = [
+        'from-red-800 to-amber-700', 'from-amber-800 to-yellow-700',
+        'from-emerald-800 to-teal-700', 'from-blue-900 to-slate-700',
+        'from-purple-900 to-indigo-700', 'from-rose-800 to-pink-700'
+      ];
+      const idx = (article.sort_order || article.id) - 1;
+      document.getElementById('article-header').innerHTML = `
+        <div class="h-48 bg-gradient-to-br ${gradients[idx % gradients.length]} rounded-xl flex items-center justify-center mb-6">
+          <h1 class="text-2xl md:text-3xl font-bold text-white px-6 text-center" style="font-family:'Noto Serif SC',serif;">${article.title}</h1>
+        </div>
+        <p class="text-[var(--secondary)] font-medium mb-2">${article.author}</p>
+        <p class="text-[var(--muted)] leading-relaxed">${article.description || ''}</p>
+      `;
+
+      // 渲染正文
+      if (article.content) {
+        document.getElementById('content-body').innerHTML = article.content.split('\n\n').map(p =>
+          p.trim() ? `<p class="mb-4 text-[var(--fg)] leading-[1.9] text-indent">${p.trim()}</p>` : ''
+        ).join('');
+        document.getElementById('article-content').style.display = 'block';
+      }
+
+      // 检查阅读状态
+      if (currentUser) {
+        document.getElementById('post-form-section').style.display = 'block';
+        const { data: record } = await supabase.from('reading_records').select('id').eq('user_id', currentUser.id).eq('article_id', articleId).maybeSingle();
+        isRead = !!record;
+        const { data: fav } = await supabase.from('favorites').select('id').eq('user_id', currentUser.id).eq('target_type', 'article').eq('target_id', String(articleId)).maybeSingle();
+        isFavorited = !!fav;
+      }
+      renderActionButtons();
+
+      // 加载心得
+      await loadPosts();
+      // 加载金句
+      await loadQuotes();
+    }
+
+    function renderActionButtons() {
+      const container = document.getElementById('action-buttons');
+      container.innerHTML = `
+        <button onclick="toggleRead()" class="px-5 py-2.5 rounded-lg text-sm font-medium transition-all ${isRead ? 'bg-green-100 text-green-700 border border-green-300' : 'bg-[var(--primary)] text-[var(--primary-fg)] hover:opacity-90'}">
+          ${isRead ? '✓ 已完成阅读' : '完成阅读打卡'}
+        </button>
+        <button onclick="toggleFavorite()" class="px-5 py-2.5 rounded-lg text-sm font-medium border transition-all ${isFavorited ? 'bg-amber-50 text-amber-700 border-amber-300' : 'border-[var(--border)] text-[var(--muted)] hover:border-[var(--primary)] hover:text-[var(--primary)]'}">
+          ${isFavorited ? '★ 已收藏' : '☆ 收藏篇目'}
+        </button>
+        <a href="forum.html?article_id=${articleId}" class="px-5 py-2.5 rounded-lg text-sm font-medium border border-[var(--border)] text-[var(--muted)] hover:border-[var(--primary)] hover:text-[var(--primary)] transition-all inline-block">前往论坛交流</a>
+        <a href="quotes.html?article_id=${articleId}" class="px-5 py-2.5 rounded-lg text-sm font-medium border border-[var(--border)] text-[var(--muted)] hover:border-[var(--primary)] hover:text-[var(--primary)] transition-all inline-block">摘录金句</a>
+      `;
+    }
+
+    async function toggleRead() {
+      if (!currentUser) { alert('请先设置昵称'); return; }
+      if (isRead) {
+        await supabase.from('reading_records').delete().eq('user_id', currentUser.id).eq('article_id', articleId);
+        isRead = false;
+      } else {
+        await supabase.from('reading_records').insert({ user_id: currentUser.id, article_id: articleId });
+        isRead = true;
+      }
+      renderActionButtons();
+    }
+
+    async function toggleFavorite() {
+      if (!currentUser) { alert('请先设置昵称'); return; }
+      if (isFavorited) {
+        await supabase.from('favorites').delete().eq('user_id', currentUser.id).eq('target_type', 'article').eq('target_id', String(articleId));
+        isFavorited = false;
+      } else {
+        await supabase.from('favorites').insert({ user_id: currentUser.id, target_type: 'article', target_id: String(articleId) });
+        isFavorited = true;
+      }
+      renderActionButtons();
+    }
+
+    async function loadPosts() {
+      const { data: posts } = await supabase.from('posts').select('*, users(nickname)').eq('article_id', articleId).order('is_pinned', { ascending: false }).order('created_at', { ascending: false });
+      const container = document.getElementById('posts-list');
+      if (!posts || posts.length === 0) {
+        container.innerHTML = '<p class="text-[var(--muted)] text-sm">暂无心得，来写第一条吧</p>';
+        return;
+      }
+      container.innerHTML = posts.map(p => {
+        const nick = Array.isArray(p.users) ? (p.users[0]?.nickname || '未知') : (p.users?.nickname || '未知');
+        const time = new Date(p.created_at).toLocaleDateString('zh-CN');
+        return `
+        <div class="bg-white rounded-xl border border-[var(--border)] p-5 mb-4 ${p.is_pinned ? 'border-l-4 border-l-[var(--accent)]' : ''}">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-sm font-semibold text-[var(--primary)]">${nick}</span>
+            <span class="text-xs text-[var(--muted)]">${time}</span>
+          </div>
+          <p class="text-sm text-[var(--fg)] leading-relaxed">${p.content}</p>
+          <div class="flex items-center gap-4 mt-3">
+            <button onclick="likePost('${p.id}')" class="text-xs text-[var(--muted)] hover:text-[var(--accent)] transition-colors">❤️ ${p.likes_count || 0}</button>
+          </div>
+        </div>`;
+      }).join('');
+    }
+
+    async function likePost(postId) {
+      if (!currentUser) { alert('请先设置昵称'); return; }
+      const { data: existing } = await supabase.from('post_likes').select('id').eq('user_id', currentUser.id).eq('post_id', postId).maybeSingle();
+      if (existing) {
+        await supabase.from('post_likes').delete().eq('id', existing.id);
+        await supabase.rpc('update_posts_likes_count', { post_id: postId });
+      } else {
+        await supabase.from('post_likes').insert({ user_id: currentUser.id, post_id: postId });
+        await supabase.rpc('update_posts_likes_count', { post_id: postId });
+      }
+      await loadPosts();
+    }
+
+    async function loadQuotes() {
+      const { data: quotes } = await supabase.from('golden_quotes').select('*, users(nickname)').eq('article_id', articleId).order('created_at', { ascending: false });
+      const container = document.getElementById('quotes-list');
+      if (!quotes || quotes.length === 0) {
+        container.innerHTML = '<p class="text-[var(--muted)] text-sm">暂无金句</p>';
+        return;
+      }
+      container.innerHTML = quotes.map(q => {
+        const nick = Array.isArray(q.users) ? (q.users[0]?.nickname || '未知') : (q.users?.nickname || '未知');
+        return `
+        <div class="bg-[#FFF8F0] rounded-xl border border-[var(--border)] p-5 mb-4">
+          <p class="text-lg text-[var(--fg)] leading-relaxed mb-2" style="font-family:'ZCOOL XiaoWei',serif;">"${q.quote}"</p>
+          ${q.reflection ? `<p class="text-sm text-[var(--muted)] italic">—— ${q.reflection}</p>` : ''}
+          <span class="text-xs text-[var(--muted)] mt-2 block">摘录者：${nick}</span>
+        </div>`;
+      }).join('');
+    }
+
+    // 发布心得
+    document.addEventListener('click', async function(e) {
+      if (e.target.id === 'submit-post') {
+        if (!currentUser) { alert('请先设置昵称'); return; }
+        const content = document.getElementById('post-content').value.trim();
+        if (!content) { alert('请输入心得内容'); return; }
+        await supabase.from('posts').insert({ user_id: currentUser.id, article_id: articleId, content });
+        document.getElementById('post-content').value = '';
+        await loadPosts();
+      }
+    });
+
+    initArticlePage();
+  </script>
+</body>
+</html>

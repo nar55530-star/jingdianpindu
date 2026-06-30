@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>管理后台 - 经典品读</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link href="https://fonts.googleapis.cn/css2?family=Noto+Serif+SC:wght@400;600;700&family=ZCOOL+XiaoWei&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="bg-[var(--bg)] text-[var(--fg)] min-h-screen">
+  <div id="navbar"></div>
+
+  <main class="max-w-5xl mx-auto px-4 py-8">
+    <h1 class="text-2xl font-bold text-[var(--primary)] mb-6" style="font-family:'Noto Serif SC',serif;">管理后台</h1>
+
+    <div id="not-admin" style="display:none" class="text-center py-20">
+      <p class="text-[var(--muted)]">仅管理员可访问此页面</p>
+    </div>
+
+    <div id="admin-content" style="display:none">
+      <!-- 统计概览 -->
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+        <div class="bg-white rounded-xl border border-[var(--border)] p-4 text-center">
+          <div class="text-2xl font-bold text-[var(--primary)]" id="stat-articles">0</div>
+          <div class="text-xs text-[var(--muted)] mt-1">篇目数</div>
+        </div>
+        <div class="bg-white rounded-xl border border-[var(--border)] p-4 text-center">
+          <div class="text-2xl font-bold text-[var(--primary)]" id="stat-users">0</div>
+          <div class="text-xs text-[var(--muted)] mt-1">用户数</div>
+        </div>
+        <div class="bg-white rounded-xl border border-[var(--border)] p-4 text-center">
+          <div class="text-2xl font-bold text-[var(--primary)]" id="stat-posts">0</div>
+          <div class="text-xs text-[var(--muted)] mt-1">心得数</div>
+        </div>
+        <div class="bg-white rounded-xl border border-[var(--border)] p-4 text-center">
+          <div class="text-2xl font-bold text-[var(--primary)]" id="stat-records">0</div>
+          <div class="text-xs text-[var(--muted)] mt-1">打卡数</div>
+        </div>
+      </div>
+
+      <!-- 管理标签 -->
+      <div class="flex gap-1 mb-6 border-b border-[var(--border)]">
+        <button onclick="switchAdminTab('articles')" class="admin-tab-btn px-4 py-2 text-sm font-medium border-b-2 border-transparent" data-tab="articles">篇目管理</button>
+        <button onclick="switchAdminTab('posts')" class="admin-tab-btn px-4 py-2 text-sm font-medium border-b-2 border-transparent" data-tab="posts">帖子管理</button>
+        <button onclick="switchAdminTab('announcements')" class="admin-tab-btn px-4 py-2 text-sm font-medium border-b-2 border-transparent" data-tab="announcements">公告管理</button>
+      </div>
+
+      <div id="admin-tab-content"></div>
+    </div>
+  </main>
+
+  <script src="js/app.js"></script>
+  <script src="js/components.js"></script>
+  <script>
+    async function initAdminPage() {
+      await initApp();
+      document.getElementById('navbar').innerHTML = renderNavbar();
+      highlightNav('admin');
+
+      if (!currentUser || !currentUser.is_admin) {
+        document.getElementById('not-admin').style.display = 'block';
+        return;
+      }
+
+      document.getElementById('admin-content').style.display = 'block';
+      await loadStats();
+      switchAdminTab('articles');
+    }
+
+    async function loadStats() {
+      const { count: ac } = await supabase.from('articles').select('*', { count: 'exact', head: true });
+      const { count: uc } = await supabase.from('users').select('*', { count: 'exact', head: true });
+      const { count: pc } = await supabase.from('posts').select('*', { count: 'exact', head: true });
+      const { count: rc } = await supabase.from('reading_records').select('*', { count: 'exact', head: true });
+      document.getElementById('stat-articles').textContent = ac || 0;
+      document.getElementById('stat-users').textContent = uc || 0;
+      document.getElementById('stat-posts').textContent = pc || 0;
+      document.getElementById('stat-records').textContent = rc || 0;
+    }
+
+    function switchAdminTab(tab) {
+      document.querySelectorAll('.admin-tab-btn').forEach(btn => {
+        btn.classList.toggle('text-[var(--primary)]', btn.dataset.tab === tab);
+        btn.classList.toggle('border-[var(--primary)]', btn.dataset.tab === tab);
+        btn.classList.toggle('text-[var(--muted)]', btn.dataset.tab !== tab);
+      });
+      const c = document.getElementById('admin-tab-content');
+      if (tab === 'articles') loadArticlesAdmin(c);
+      else if (tab === 'posts') loadPostsAdmin(c);
+      else if (tab === 'announcements') loadAnnouncementsAdmin(c);
+    }
+
+    async function loadArticlesAdmin(container) {
+      const { data: articles } = await supabase.from('articles').select('*').order('sort_order', { ascending: true });
+      if (!articles) { container.innerHTML = '<p class="text-[var(--muted)]">加载失败</p>'; return; }
+      container.innerHTML = `
+        <div class="mb-4"><button onclick="showAddArticleForm()" class="bg-[var(--primary)] text-[var(--primary-fg)] px-4 py-2 rounded-lg text-sm hover:opacity-90">添加篇目</button></div>
+        <div id="add-article-form" style="display:none" class="bg-white rounded-xl border border-[var(--border)] p-6 mb-6">
+          <h3 class="font-bold mb-4" style="font-family:'Noto Serif SC',serif;">新增篇目</h3>
+          <input id="new-title" class="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm mb-3 bg-white focus:outline-none focus:border-[var(--primary)]" placeholder="篇目标题">
+          <input id="new-author" class="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm mb-3 bg-white focus:outline-none focus:border-[var(--primary)]" placeholder="作者">
+          <textarea id="new-desc" rows="2" class="w-full border border-[var(--border)] rounded-lg p-3 text-sm mb-3 focus:outline-none focus:border-[var(--primary)] resize-none bg-[var(--bg)]" placeholder="简介"></textarea>
+          <textarea id="new-content" rows="4" class="w-full border border-[var(--border)] rounded-lg p-3 text-sm mb-3 focus:outline-none focus:border-[var(--primary)] resize-none bg-[var(--bg)]" placeholder="正文内容"></textarea>
+          <input id="new-sort" type="number" class="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm mb-3 bg-white focus:outline-none focus:border-[var(--primary)]" placeholder="排序号" value="1">
+          <div class="flex gap-2">
+            <button onclick="submitNewArticle()" class="bg-[var(--primary)] text-[var(--primary-fg)] px-4 py-2 rounded-lg text-sm hover:opacity-90">保存</button>
+            <button onclick="document.getElementById('add-article-form').style.display='none'" class="border border-[var(--border)] px-4 py-2 rounded-lg text-sm text-[var(--muted)]">取消</button>
+          </div>
+        </div>
+      ` + articles.map(a => `
+        <div class="bg-white rounded-xl border border-[var(--border)] p-5 mb-3 flex items-center justify-between">
+          <div>
+            <span class="font-semibold text-[var(--fg)] text-sm">${a.title}</span>
+            <span class="text-xs text-[var(--muted)] ml-2">${a.author}</span>
+          </div>
+          <button onclick="deleteArticle(${a.id})" class="text-xs text-red-500 hover:underline">删除</button>
+        </div>
+      `).join('');
+    }
+
+    function showAddArticleForm() {
+      document.getElementById('add-article-form').style.display = 'block';
+    }
+
+    async function submitNewArticle() {
+      const title = document.getElementById('new-title').value.trim();
+      const author = document.getElementById('new-author').value.trim();
+      const description = document.getElementById('new-desc').value.trim();
+      const content = document.getElementById('new-content').value.trim();
+      const sort_order = parseInt(document.getElementById('new-sort').value) || 1;
+      if (!title || !author) { alert('标题和作者必填'); return; }
+      await supabase.from('articles').insert({ title, author, description, content, sort_order });
+      switchAdminTab('articles');
+      await loadStats();
+    }
+
+    async function deleteArticle(id) {
+      if (!confirm('确定删除该篇目？')) return;
+      await supabase.from('articles').delete().eq('id', id);
+      switchAdminTab('articles');
+      await loadStats();
+    }
+
+    async function loadPostsAdmin(container) {
+      const { data: posts } = await supabase.from('posts').select('*, users(nickname), articles(title)').order('created_at', { ascending: false });
+      if (!posts || posts.length === 0) { container.innerHTML = '<p class="text-[var(--muted)] text-center py-8">暂无帖子</p>'; return; }
+      container.innerHTML = posts.map(p => {
+        const nick = Array.isArray(p.users) ? (p.users[0]?.nickname || '未知') : (p.users?.nickname || '未知');
+        const articleTitle = Array.isArray(p.articles) ? (p.articles[0]?.title || '') : (p.articles?.title || '');
+        return `<div class="bg-white rounded-xl border border-[var(--border)] p-5 mb-3">
+          <div class="flex items-center justify-between mb-2">
+            <div class="flex items-center gap-2">
+              <span class="text-sm font-semibold text-[var(--primary)]">${nick}</span>
+              <span class="text-xs bg-[var(--border)] px-2 py-0.5 rounded text-[var(--muted)]">${articleTitle}</span>
+              ${p.is_pinned ? '<span class="text-xs bg-[var(--accent)] text-white px-2 py-0.5 rounded">已置顶</span>' : ''}
+            </div>
+            <div class="flex gap-2">
+              <button onclick="togglePin('${p.id}', ${!p.is_pinned})" class="text-xs text-[var(--primary)] hover:underline">${p.is_pinned ? '取消置顶' : '置顶'}</button>
+              <button onclick="deletePost('${p.id}')" class="text-xs text-red-500 hover:underline">删除</button>
+            </div>
+          </div>
+          <p class="text-sm text-[var(--fg)]">${p.content}</p>
+        </div>`;
+      }).join('');
+    }
+
+    async function togglePin(postId, pinned) {
+      await supabase.from('posts').update({ is_pinned: pinned }).eq('id', postId);
+      switchAdminTab('posts');
+    }
+
+    async function deletePost(postId) {
+      if (!confirm('确定删除该帖子？')) return;
+      await supabase.from('comments').delete().eq('post_id', postId);
+      await supabase.from('post_likes').delete().eq('post_id', postId);
+      await supabase.from('posts').delete().eq('id', postId);
+      switchAdminTab('posts');
+      await loadStats();
+    }
+
+    async function loadAnnouncementsAdmin(container) {
+      const { data: anns } = await supabase.from('announcements').select('*, users(nickname)').order('created_at', { ascending: false });
+      container.innerHTML = `
+        <div class="bg-white rounded-xl border border-[var(--border)] p-6 mb-6">
+          <h3 class="font-bold mb-4" style="font-family:'Noto Serif SC',serif;">发布公告</h3>
+          <input id="ann-title" class="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm mb-3 bg-white focus:outline-none focus:border-[var(--primary)]" placeholder="公告标题">
+          <textarea id="ann-content" rows="3" class="w-full border border-[var(--border)] rounded-lg p-3 text-sm mb-3 focus:outline-none focus:border-[var(--primary)] resize-none bg-[var(--bg)]" placeholder="公告内容"></textarea>
+          <button onclick="submitAnnouncement()" class="bg-[var(--primary)] text-[var(--primary-fg)] px-4 py-2 rounded-lg text-sm hover:opacity-90">发布</button>
+        </div>
+      ` + (anns && anns.length > 0 ? anns.map(a => {
+        const nick = Array.isArray(a.users) ? (a.users[0]?.nickname || '管理员') : (a.users?.nickname || '管理员');
+        return `<div class="bg-white rounded-xl border border-[var(--border)] p-5 mb-3">
+          <div class="flex items-center justify-between mb-2">
+            <span class="font-semibold text-sm text-[var(--fg)]">${a.title}</span>
+            <button onclick="deleteAnnouncement('${a.id}')" class="text-xs text-red-500 hover:underline">删除</button>
+          </div>
+          <p class="text-sm text-[var(--fg)]">${a.content}</p>
+          <span class="text-xs text-[var(--muted)] mt-2 inline-block">${nick} · ${new Date(a.created_at).toLocaleDateString('zh-CN')}</span>
+        </div>`;
+      }).join('') : '<p class="text-[var(--muted)] text-center py-8">暂无公告</p>');
+    }
+
+    async function submitAnnouncement() {
+      if (!currentUser) return;
+      const title = document.getElementById('ann-title').value.trim();
+      const content = document.getElementById('ann-content').value.trim();
+      if (!title || !content) { alert('标题和内容必填'); return; }
+      await supabase.from('announcements').insert({ title, content, user_id: currentUser.id });
+      switchAdminTab('announcements');
+    }
+
+    async function deleteAnnouncement(id) {
+      if (!confirm('确定删除该公告？')) return;
+      await supabase.from('announcements').delete().eq('id', id);
+      switchAdminTab('announcements');
+    }
+
+    initAdminPage();
+  </script>
+</body>
+</html>
