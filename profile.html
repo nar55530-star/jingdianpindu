@@ -15,7 +15,7 @@
   <main class="max-w-4xl mx-auto px-4 py-8">
     <div id="not-logged-in" style="display:none" class="text-center py-20">
       <p class="text-[var(--muted)] mb-4">请先设置昵称</p>
-      <button onclick="showNicknameDialog()" class="bg-[var(--primary)] text-[var(--primary-fg)] px-6 py-2 rounded-lg text-sm hover:opacity-90">设置昵称</button>
+      <button onclick="showNicknameModal()" class="bg-[var(--primary)] text-[var(--primary-fg)] px-6 py-2 rounded-lg text-sm hover:opacity-90">设置昵称</button>
     </div>
 
     <div id="profile-content" style="display:none">
@@ -26,7 +26,7 @@
             <h1 class="text-xl font-bold text-[var(--fg)]" style="font-family:'Noto Serif SC',serif;" id="user-nickname"></h1>
             <p class="text-sm text-[var(--muted)] mt-1" id="user-join-date"></p>
           </div>
-          <button onclick="showNicknameDialog()" class="text-sm text-[var(--primary)] hover:underline">修改昵称</button>
+          <button onclick="showNicknameModal()" class="text-sm text-[var(--primary)] hover:underline">修改昵称</button>
         </div>
       </div>
 
@@ -54,7 +54,6 @@
   </main>
 
   <script src="js/app.js"></script>
-  <script src="js/components.js"></script>
   <script>
     const BADGES = [
       { count: 1, name: '初读者', icon: '📖' },
