@@ -44,7 +44,6 @@
     async function initQuotesPage() {
       await initApp();
       if (!dbReady) return;
-      document.getElementById('navbar').innerHTML = renderNavbar();
       highlightNav('quotes');
 
       const { data: articles } = await db.from('articles').select('*').order('sort_order', { ascending: true });
