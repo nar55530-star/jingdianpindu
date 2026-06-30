@@ -10,7 +10,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useUser } from '@/lib/user-context';
 import { BookOpen } from 'lucide-react';
 
@@ -18,7 +18,15 @@ export function NicknameDialog() {
   const { user, setUser } = useUser();
   const [nickname, setNickname] = useState('');
   const [loading, setLoading] = useState(false);
-  const [open, setOpen] = useState(!user && !localStorage.getItem('classic_reading_user_id'));
+  const [open, setOpen] = useState(false);
+
+  // 客户端挂载后检查是否需要弹出昵称设置
+  useEffect(() => {
+    if (!user) {
+      const stored = localStorage.getItem('classic_reading_user_id');
+      if (!stored) setOpen(true);
+    }
+  }, [user]);
 
   const handleSubmit = async () => {
     if (!nickname.trim()) return;
@@ -32,7 +40,9 @@ export function NicknameDialog() {
       if (res.ok) {
         const data = await res.json();
         setUser(data.user);
-        localStorage.setItem('classic_reading_user_id', data.user.id);
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('classic_reading_user_id', data.user.id);
+        }
         setOpen(false);
       }
     } catch {

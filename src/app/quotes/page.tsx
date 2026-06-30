@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useUser } from '@/lib/user-context';
 import { Button } from '@/components/ui/button';
@@ -36,6 +36,14 @@ interface GoldenQuote {
 }
 
 export default function QuotesPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center py-20 text-muted-foreground">加载中...</div>}>
+      <QuotesContent />
+    </Suspense>
+  );
+}
+
+function QuotesContent() {
   const searchParams = useSearchParams();
   const { user } = useUser();
   const preselectedArticleId = searchParams.get('article_id');

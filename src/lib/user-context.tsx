@@ -19,12 +19,27 @@ interface UserContextType {
 
 const UserContext = createContext<UserContextType | undefined>(undefined);
 
+function getStoredUserId(): string | null {
+  if (typeof window === 'undefined') return null;
+  return localStorage.getItem('classic_reading_user_id');
+}
+
+function setStoredUserId(id: string): void {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem('classic_reading_user_id', id);
+}
+
+function removeStoredUserId(): void {
+  if (typeof window === 'undefined') return;
+  localStorage.removeItem('classic_reading_user_id');
+}
+
 export function UserProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
   const refreshUser = useCallback(async () => {
-    const userId = localStorage.getItem('classic_reading_user_id');
+    const userId = getStoredUserId();
     if (!userId) {
       setUser(null);
       setLoading(false);
@@ -37,9 +52,9 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         const data = await res.json();
         if (data.user) {
           setUser(data.user);
-          localStorage.setItem('classic_reading_user_id', data.user.id);
+          setStoredUserId(data.user.id);
         } else {
-          localStorage.removeItem('classic_reading_user_id');
+          removeStoredUserId();
           setUser(null);
         }
       }
@@ -51,7 +66,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const logout = useCallback(() => {
-    localStorage.removeItem('classic_reading_user_id');
+    removeStoredUserId();
     setUser(null);
   }, []);
 
