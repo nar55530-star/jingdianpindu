@@ -17,6 +17,14 @@ body {
   line-height: 1.75;
 }
 
+.serif-title {
+  font-family: "Noto Serif SC", serif;
+}
+
+.is-hidden {
+  display: none;
+}
+
 /* 导航链接 */
 .nav-link {
   color: var(--muted);

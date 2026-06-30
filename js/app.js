@@ -88,6 +88,14 @@ function updateUserUI() {
   }
 }
 
+function highlightNav(activePage) {
+  document.querySelectorAll('.nav-link').forEach(link => {
+    const href = link.getAttribute('href') || '';
+    const isActive = (activePage === 'index' && href === 'index.html') || href === `${activePage}.html`;
+    link.classList.toggle('text-[var(--primary)]', isActive);
+  });
+}
+
 /* ========== 昵称弹窗 ========== */
 function showNicknameModal() {
   let modal = document.getElementById('nickname-modal');

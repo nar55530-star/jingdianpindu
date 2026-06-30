@@ -13,13 +13,13 @@
   <div id="navbar"></div>
 
   <main class="max-w-5xl mx-auto px-4 py-8">
-    <h1 class="text-2xl font-bold text-[var(--primary)] mb-6" style="font-family:'Noto Serif SC',serif;">管理后台</h1>
+    <h1 class="serif-title text-2xl font-bold text-[var(--primary)] mb-6">管理后台</h1>
 
-    <div id="not-admin" style="display:none" class="text-center py-20">
+    <div id="not-admin" class="is-hidden text-center py-20">
       <p class="text-[var(--muted)]">仅管理员可访问此页面</p>
     </div>
 
-    <div id="admin-content" style="display:none">
+    <div id="admin-content" class="is-hidden">
       <!-- 统计概览 -->
       <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
         <div class="bg-white rounded-xl border border-[var(--border)] p-4 text-center">
@@ -60,11 +60,11 @@
       highlightNav('admin');
 
       if (!currentUser || !currentUser.is_admin) {
-        document.getElementById('not-admin').style.display = 'block';
+        document.getElementById('not-admin').classList.remove('is-hidden');
         return;
       }
 
-      document.getElementById('admin-content').style.display = 'block';
+      document.getElementById('admin-content').classList.remove('is-hidden');
       await loadStats();
       switchAdminTab('articles');
     }
@@ -97,8 +97,8 @@
       if (!articles) { container.innerHTML = '<p class="text-[var(--muted)]">加载失败</p>'; return; }
       container.innerHTML = `
         <div class="mb-4"><button onclick="showAddArticleForm()" class="bg-[var(--primary)] text-[var(--primary-fg)] px-4 py-2 rounded-lg text-sm hover:opacity-90">添加篇目</button></div>
-        <div id="add-article-form" style="display:none" class="bg-white rounded-xl border border-[var(--border)] p-6 mb-6">
-          <h3 class="font-bold mb-4" style="font-family:'Noto Serif SC',serif;">新增篇目</h3>
+        <div id="add-article-form" class="is-hidden bg-white rounded-xl border border-[var(--border)] p-6 mb-6">
+          <h3 class="serif-title font-bold mb-4">新增篇目</h3>
           <input id="new-title" class="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm mb-3 bg-white focus:outline-none focus:border-[var(--primary)]" placeholder="篇目标题">
           <input id="new-author" class="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm mb-3 bg-white focus:outline-none focus:border-[var(--primary)]" placeholder="作者">
           <textarea id="new-desc" rows="2" class="w-full border border-[var(--border)] rounded-lg p-3 text-sm mb-3 focus:outline-none focus:border-[var(--primary)] resize-none bg-[var(--bg)]" placeholder="简介"></textarea>
@@ -106,7 +106,7 @@
           <input id="new-sort" type="number" class="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm mb-3 bg-white focus:outline-none focus:border-[var(--primary)]" placeholder="排序号" value="1">
           <div class="flex gap-2">
             <button onclick="submitNewArticle()" class="bg-[var(--primary)] text-[var(--primary-fg)] px-4 py-2 rounded-lg text-sm hover:opacity-90">保存</button>
-            <button onclick="document.getElementById('add-article-form').style.display='none'" class="border border-[var(--border)] px-4 py-2 rounded-lg text-sm text-[var(--muted)]">取消</button>
+            <button onclick="hideAddArticleForm()" class="border border-[var(--border)] px-4 py-2 rounded-lg text-sm text-[var(--muted)]">取消</button>
           </div>
         </div>
       ` + articles.map(a => `
@@ -121,7 +121,11 @@
     }
 
     function showAddArticleForm() {
-      document.getElementById('add-article-form').style.display = 'block';
+      document.getElementById('add-article-form').classList.remove('is-hidden');
+    }
+
+    function hideAddArticleForm() {
+      document.getElementById('add-article-form').classList.add('is-hidden');
     }
 
     async function submitNewArticle() {
@@ -184,7 +188,7 @@
       const { data: anns } = await db.from('announcements').select('*, users(nickname)').order('created_at', { ascending: false });
       container.innerHTML = `
         <div class="bg-white rounded-xl border border-[var(--border)] p-6 mb-6">
-          <h3 class="font-bold mb-4" style="font-family:'Noto Serif SC',serif;">发布公告</h3>
+          <h3 class="serif-title font-bold mb-4">发布公告</h3>
           <input id="ann-title" class="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm mb-3 bg-white focus:outline-none focus:border-[var(--primary)]" placeholder="公告标题">
           <textarea id="ann-content" rows="3" class="w-full border border-[var(--border)] rounded-lg p-3 text-sm mb-3 focus:outline-none focus:border-[var(--primary)] resize-none bg-[var(--bg)]" placeholder="公告内容"></textarea>
           <button onclick="submitAnnouncement()" class="bg-[var(--primary)] text-[var(--primary-fg)] px-4 py-2 rounded-lg text-sm hover:opacity-90">发布</button>
