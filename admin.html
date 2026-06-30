@@ -55,6 +55,7 @@
   <script>
     async function initAdminPage() {
       await initApp();
+      if (!dbReady) return;
       document.getElementById('navbar').innerHTML = renderNavbar();
       highlightNav('admin');
 

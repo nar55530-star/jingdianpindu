@@ -43,6 +43,7 @@
 
     async function initForumPage() {
       await initApp();
+      if (!dbReady) return;
       document.getElementById('navbar').innerHTML = renderNavbar();
       highlightNav('forum');
 

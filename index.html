@@ -76,6 +76,7 @@
 
     async function loadIndexPage() {
       await initApp();
+      if (!dbReady) return; // 数据库未就绪，initDb已显示错误提示
       highlightNav('index');
 
       // 加载篇目（不需要登录）

@@ -68,6 +68,7 @@
 
     async function initProfilePage() {
       await initApp();
+      if (!dbReady) return;
       document.getElementById('navbar').innerHTML = renderNavbar();
       highlightNav('profile');
 

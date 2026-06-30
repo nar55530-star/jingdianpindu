@@ -43,6 +43,7 @@
 
     async function initQuotesPage() {
       await initApp();
+      if (!dbReady) return;
       document.getElementById('navbar').innerHTML = renderNavbar();
       highlightNav('quotes');
 
