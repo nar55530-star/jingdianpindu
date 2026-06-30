@@ -1,14 +1,27 @@
 /* ========== Supabase 初始化 ========== */
 const SUPABASE_URL = 'https://br-sure-kite-582892a2.supabase2.aidap-global.cn-beijing.volces.com';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjMzNjMyNTU1MjEsInJvbGUiOiJhbm9uIn0.-m16Gj3D8GZZvdMZlTsOG19lAyDpQ2hAuk_nAELdO3I';
-const SUPABASE_SERVICE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjMzNjMyNTU1MjEsInJvbGUiOiJzZXJ2aWNlX3JvbGUifQ.uiL2iKI3Mpv9QstlvTfihrVKBuomBvCQQ49T0jSbT8Q';
 
-const db = supabase.createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+let db = null;
+let dbReady = false;
+
+function initDb() {
+  if (typeof window.supabase === 'undefined') {
+    console.error('[App] Supabase SDK 未加载，请检查网络连接');
+    const grids = document.querySelectorAll('#articles-grid, #posts-list, #quotes-grid');
+    grids.forEach(el => { el.innerHTML = '<p style="color:#e11d48;text-align:center;padding:2rem;">数据服务加载失败，请刷新页面重试</p>'; });
+    return false;
+  }
+  db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  dbReady = true;
+  return true;
+}
 
 /* ========== 用户管理 ========== */
 let currentUser = null;
 
 async function ensureUser() {
+  if (!dbReady) return null;
   const uid = localStorage.getItem('userId');
   if (uid) {
     const { data } = await db.from('users').select('*').eq('id', uid).maybeSingle();
@@ -106,6 +119,7 @@ function showNicknameModal() {
 
 /* ========== 统一初始化 ========== */
 async function initApp() {
+  if (!initDb()) return; // 初始化数据库连接
   renderNavbar();
   const user = await ensureUser();
   if (user) updateUserUI();
