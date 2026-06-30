@@ -1,9 +1,24 @@
 import type { Metadata } from 'next';
+import { Noto_Serif_SC, ZCOOL_XiaoWei } from 'next/font/google';
 import { Inspector } from 'react-dev-inspector';
 import { UserProvider } from '@/lib/user-context';
 import { Navbar } from '@/components/navbar';
 import { NicknameDialog } from '@/components/nickname-dialog';
 import './globals.css';
+
+const notoSerifSC = Noto_Serif_SC({
+  subsets: ['latin'],
+  weight: ['400', '600', '700'],
+  variable: '--font-noto-serif-sc',
+  display: 'swap',
+});
+
+const zcoolXiaoWei = ZCOOL_XiaoWei({
+  subsets: ['latin'],
+  weight: '400',
+  variable: '--font-zcool-xiaowei',
+  display: 'swap',
+});
 
 export const metadata: Metadata = {
   title: {
@@ -30,7 +45,7 @@ export default function RootLayout({
 
   return (
     <html lang="zh-CN">
-      <body className={`antialiased`}>
+      <body className={`${notoSerifSC.variable} ${zcoolXiaoWei.variable} antialiased`}>
         <UserProvider>
           <NicknameDialog />
           <div className="flex min-h-screen flex-col">

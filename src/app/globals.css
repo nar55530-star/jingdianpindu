@@ -1,6 +1,5 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
-@import "https://fonts.googleapis.cn/css2?family=Noto+Serif+SC:wght@400;600;700&family=ZCOOL+XiaoWei&display=swap";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -107,11 +106,11 @@ body {
 }
 
 .font-serif {
-  font-family: var(--font-serif);
+  font-family: var(--font-noto-serif-sc), 'Noto Serif SC', serif;
 }
 
 .font-quote {
-  font-family: var(--font-quote);
+  font-family: var(--font-zcool-xiaowei), 'ZCOOL XiaoWei', serif;
 }
 
 /* 自定义滚动条 */
