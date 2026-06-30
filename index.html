@@ -75,18 +75,23 @@
     };
 
     async function loadIndexPage() {
-      await initApp();
-      if (!dbReady) return; // 数据库未就绪，initDb已显示错误提示
-      highlightNav('index');
+      try {
+        await initApp();
+        if (!dbReady) return;
+        highlightNav('index');
 
-      // 加载篇目（不需要登录）
-      const { data: articles, error } = await db.from('articles').select('*').order('sort_order', { ascending: true });
-      const grid = document.getElementById('articles-grid');
+        const { data: articles, error } = await db.from('articles').select('*').order('sort_order', { ascending: true });
+        const grid = document.getElementById('articles-grid');
 
-      if (error || !articles || articles.length === 0) {
-        grid.innerHTML = '<p class="text-[var(--muted)] col-span-3 text-center py-12">暂无篇目</p>';
-        return;
-      }
+        if (error) {
+          console.error('[Index] 加载篇目失败:', error);
+          grid.innerHTML = '<p style="color:#e11d48;text-align:center;padding:2rem;">数据加载失败: ' + (error.message || '未知错误') + '</p>';
+          return;
+        }
+        if (!articles || articles.length === 0) {
+          grid.innerHTML = '<p class="text-[var(--muted)] col-span-3 text-center py-12">暂无篇目</p>';
+          return;
+        }
 
       let readIds = new Set();
       if (currentUser) {
@@ -117,6 +122,11 @@
           </div>
         </a>`;
       }).join('');
+      } catch (err) {
+        console.error('[Index] 页面加载错误:', err);
+        const grid = document.getElementById('articles-grid');
+        if (grid) grid.innerHTML = '<p style="color:#e11d48;text-align:center;padding:2rem;">页面加载出错: ' + (err.message || err) + '</p>';
+      }
     }
 
     async function loadUserDependentData() {
