@@ -1,25 +1,21 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useUser } from '@/lib/user-context';
-import { Button } from '@/components/ui/button';
+import { supabase } from '@/lib/supabase-browser';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Progress } from '@/components/ui/progress';
-import { Separator } from '@/components/ui/separator';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Input } from '@/components/ui/input';
 import {
-  User,
   BookOpen,
   MessageSquare,
   Quote,
-  Star,
-  Award,
-  CheckCircle2,
+  Heart,
+  Trophy,
   Edit3,
+  Check,
 } from 'lucide-react';
-import Link from 'next/link';
 
 interface Article {
   id: number;
@@ -28,14 +24,16 @@ interface Article {
 }
 
 interface ReadingRecord {
+  id: string;
   article_id: number;
   created_at: string;
+  articles: Article | null;
 }
 
 interface Post {
   id: string;
-  content: string;
   article_id: number;
+  content: string;
   likes_count: number;
   comments_count: number;
   created_at: string;
@@ -44,9 +42,9 @@ interface Post {
 
 interface GoldenQuote {
   id: string;
+  article_id: number;
   quote: string;
   reflection: string | null;
-  article_id: number;
   likes_count: number;
   created_at: string;
   articles: { title: string } | null;
@@ -59,316 +57,262 @@ interface Favorite {
   created_at: string;
 }
 
+const BADGES = [
+  { min: 1, label: '初读者', icon: '📖' },
+  { min: 3, label: '思考者', icon: '🤔' },
+  { min: 5, label: '深度阅读者', icon: '📚' },
+  { min: 6, label: '经典品读达人', icon: '🏆' },
+];
+
 export default function ProfilePage() {
-  const { user, setUser } = useUser();
+  const { user, setNickname: setUserNickname } = useUser();
   const [articles, setArticles] = useState<Article[]>([]);
   const [readRecords, setReadRecords] = useState<ReadingRecord[]>([]);
   const [myPosts, setMyPosts] = useState<Post[]>([]);
   const [myQuotes, setMyQuotes] = useState<GoldenQuote[]>([]);
-  const [myFavorites, setMyFavorites] = useState<Favorite[]>([]);
-  const [editNickname, setEditNickname] = useState('');
-  const [isEditingNickname, setIsEditingNickname] = useState(false);
+  const [favorites, setFavorites] = useState<Favorite[]>([]);
+  const [activeTab, setActiveTab] = useState<'reading' | 'posts' | 'quotes' | 'favorites'>('reading');
+  const [editingNickname, setEditingNickname] = useState(false);
+  const [newNickname, setNewNickname] = useState('');
+
+  const loadArticles = useCallback(async () => {
+    const { data } = await supabase.from('articles').select('id, title, author').order('sort_order');
+    if (data) setArticles(data as unknown as Article[]);
+  }, []);
+
+  const loadUserData = useCallback(async () => {
+    if (!user?.id) return;
+    const [recordsRes, postsRes, quotesRes, favsRes] = await Promise.all([
+      supabase.from('reading_records').select('id, article_id, created_at, articles(id, title, author)').eq('user_id', user.id),
+      supabase.from('posts').select('id, article_id, content, likes_count, comments_count, created_at, articles(title)').eq('user_id', user.id).order('created_at', { ascending: false }),
+      supabase.from('golden_quotes').select('id, article_id, quote, reflection, likes_count, created_at, articles(title)').eq('user_id', user.id).order('created_at', { ascending: false }),
+      supabase.from('favorites').select('id, target_type, target_id, created_at').eq('user_id', user.id),
+    ]);
+    if (recordsRes.data) setReadRecords(recordsRes.data as unknown as ReadingRecord[]);
+    if (postsRes.data) setMyPosts(postsRes.data as unknown as Post[]);
+    if (quotesRes.data) setMyQuotes(quotesRes.data as unknown as GoldenQuote[]);
+    if (favsRes.data) setFavorites(favsRes.data as unknown as Favorite[]);
+  }, [user?.id]);
 
   useEffect(() => {
-    if (!user?.id) return;
+    loadArticles();
+    if (user?.id) loadUserData();
+  }, [loadArticles, loadUserData, user?.id]);
 
-    fetch('/api/articles')
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.articles) setArticles(data.articles);
-      });
+  const totalArticles = articles.length;
+  const readCount = readRecords.length;
+  const earnedBadges = BADGES.filter((b) => readCount >= b.min);
 
-    fetch(`/api/reading-records?user_id=${user.id}`)
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.records) setReadRecords(data.records);
-      });
-
-    fetch(`/api/posts?user_id=${user.id}`)
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.posts) setMyPosts(data.posts);
-      });
-
-    fetch(`/api/golden-quotes?user_id=${user.id}`)
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.quotes) setMyQuotes(data.quotes);
-      });
-
-    fetch(`/api/favorites?user_id=${user.id}`)
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.favorites) setMyFavorites(data.favorites);
-      });
-  }, [user?.id]);
+  const handleSaveNickname = async () => {
+    if (!user || !newNickname.trim()) return;
+    await supabase.from('users').update({ nickname: newNickname.trim() }).eq('id', user.id);
+    setUserNickname(newNickname.trim());
+    setEditingNickname(false);
+  };
 
   if (!user) {
     return (
-      <div className="flex min-h-[50vh] items-center justify-center">
-        <Card className="max-w-md border-border p-8 text-center">
-          <User className="mx-auto h-12 w-12 text-muted-foreground/30" />
-          <h2 className="mt-4 font-serif text-lg font-medium">请先设置昵称</h2>
-          <p className="mt-2 text-sm text-muted-foreground">设置昵称后即可查看个人中心</p>
-          <Link href="/">
-            <Button className="mt-4 bg-primary text-primary-foreground hover:bg-primary/90">
-              返回首页
-            </Button>
-          </Link>
-        </Card>
+      <div className="flex items-center justify-center py-20">
+        <p className="text-muted-foreground">请先设置昵称</p>
       </div>
     );
   }
 
-  const readArticleIds = new Set(readRecords.map((r) => r.article_id));
-  const readCount = readArticleIds.size;
-  const totalCount = articles.length;
-  const progressPercent = totalCount > 0 ? Math.round((readCount / totalCount) * 100) : 0;
-
-  const badges: { name: string; icon: string; earned: boolean; desc: string }[] = [
-    { name: '初读者', icon: '📖', earned: readCount >= 1, desc: '阅读1篇经典' },
-    { name: '思考者', icon: '🤔', earned: readCount >= 3, desc: '阅读3篇经典' },
-    { name: '深思者', icon: '💡', earned: readCount >= 5, desc: '阅读5篇经典' },
-    { name: '经典品读达人', icon: '🏆', earned: readCount >= totalCount && totalCount > 0, desc: '阅读全部经典' },
-  ];
-
-  const favoriteArticles = myFavorites.filter((f) => f.target_type === 'article');
-  const favoriteQuotes = myFavorites.filter((f) => f.target_type === 'quote');
-
-  const handleUpdateNickname = async () => {
-    if (!editNickname.trim()) return;
-    const res = await fetch('/api/users', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: user.id, nickname: editNickname.trim() }),
-    });
-    const data = await res.json();
-    if (data.user) {
-      setUser(data.user);
-      setIsEditingNickname(false);
-    }
-  };
-
   return (
     <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
-      {/* 用户信息 */}
-      <Card className="border-border">
+      {/* 用户信息卡片 */}
+      <Card className="mb-6 border-border">
         <CardContent className="pt-6">
           <div className="flex items-center gap-4">
-            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 text-primary text-2xl font-serif font-bold">
-              {user.nickname.charAt(0)}
+            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary text-primary-foreground text-2xl font-serif font-bold">
+              {user.nickname?.charAt(0) || '?'}
             </div>
             <div className="flex-1">
-              {isEditingNickname ? (
-                <div className="flex gap-2">
+              {editingNickname ? (
+                <div className="flex items-center gap-2">
                   <Input
-                    value={editNickname}
-                    onChange={(e) => setEditNickname(e.target.value)}
-                    placeholder="输入新昵称"
-                    maxLength={20}
+                    value={newNickname}
+                    onChange={(e) => setNewNickname(e.target.value)}
+                    className="max-w-[200px]"
                   />
-                  <Button
-                    size="sm"
-                    onClick={handleUpdateNickname}
-                    disabled={!editNickname.trim()}
-                    className="bg-primary text-primary-foreground"
-                  >
-                    保存
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setIsEditingNickname(false)}
-                  >
-                    取消
+                  <Button size="sm" onClick={handleSaveNickname} className="bg-primary text-primary-foreground">
+                    <Check className="h-4 w-4" />
                   </Button>
                 </div>
               ) : (
                 <div className="flex items-center gap-2">
-                  <h2 className="font-serif text-xl font-bold">{user.nickname}</h2>
+                  <span className="text-xl font-serif font-bold">{user.nickname}</span>
                   <button
-                    onClick={() => {
-                      setEditNickname(user.nickname);
-                      setIsEditingNickname(true);
-                    }}
+                    onClick={() => { setNewNickname(user.nickname); setEditingNickname(true); }}
                     className="text-muted-foreground hover:text-primary"
                   >
                     <Edit3 className="h-4 w-4" />
                   </button>
                 </div>
               )}
-              <p className="text-sm text-muted-foreground">
-                加入时间：{new Date(user.created_at).toLocaleDateString('zh-CN')}
+              <p className="text-sm text-muted-foreground mt-1">
+                已读 {readCount} / {totalArticles} 篇
               </p>
             </div>
           </div>
 
           {/* 阅读进度 */}
-          <div className="mt-6">
-            <div className="flex items-center justify-between">
-              <span className="font-serif font-medium">阅读进度</span>
-              <span className="text-sm text-muted-foreground">{readCount} / {totalCount} 篇</span>
+          <div className="mt-4">
+            <div className="h-2 w-full rounded-full bg-border">
+              <div
+                className="h-2 rounded-full bg-primary transition-all duration-500"
+                style={{ width: totalArticles > 0 ? `${(readCount / totalArticles) * 100}%` : '0%' }}
+              />
             </div>
-            <Progress value={progressPercent} className="mt-2 h-3" />
           </div>
 
           {/* 徽章 */}
-          <div className="mt-4">
-            <h3 className="font-serif font-medium mb-2">我的徽章</h3>
-            <div className="flex flex-wrap gap-2">
-              {badges.map((badge) => (
-                <Badge
-                  key={badge.name}
-                  variant={badge.earned ? 'default' : 'outline'}
-                  className={badge.earned ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}
-                  title={badge.desc}
-                >
-                  {badge.icon} {badge.name}
+          {earnedBadges.length > 0 && (
+            <div className="mt-4 flex flex-wrap gap-2">
+              {earnedBadges.map((badge) => (
+                <Badge key={badge.label} className="bg-primary/10 text-primary hover:bg-primary/20">
+                  <span className="mr-1">{badge.icon}</span>
+                  {badge.label}
                 </Badge>
               ))}
             </div>
-          </div>
+          )}
         </CardContent>
       </Card>
 
-      {/* 详细标签页 */}
-      <Tabs defaultValue="reading" className="mt-6">
-        <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger value="reading">
-            <BookOpen className="mr-1 h-4 w-4" />
-            我的阅读
-          </TabsTrigger>
-          <TabsTrigger value="posts">
-            <MessageSquare className="mr-1 h-4 w-4" />
-            我的心得
-          </TabsTrigger>
-          <TabsTrigger value="quotes">
-            <Quote className="mr-1 h-4 w-4" />
-            我的金句
-          </TabsTrigger>
-          <TabsTrigger value="favorites">
-            <Star className="mr-1 h-4 w-4" />
-            我的收藏
-          </TabsTrigger>
-        </TabsList>
+      {/* 标签页 */}
+      <div className="mb-4 flex border-b border-border">
+        {[
+          { key: 'reading' as const, label: '我的阅读', icon: BookOpen },
+          { key: 'posts' as const, label: '我的心得', icon: MessageSquare },
+          { key: 'quotes' as const, label: '我的金句', icon: Quote },
+          { key: 'favorites' as const, label: '我的收藏', icon: Heart },
+        ].map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setActiveTab(tab.key)}
+            className={`flex items-center gap-2 px-4 py-2 text-sm border-b-2 transition-colors ${
+              activeTab === tab.key
+                ? 'border-primary text-primary font-medium'
+                : 'border-transparent text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <tab.icon className="h-4 w-4" />
+            {tab.label}
+          </button>
+        ))}
+      </div>
 
-        <TabsContent value="reading" className="mt-4">
-          {articles.length === 0 ? (
-            <p className="text-center text-muted-foreground py-8">暂无篇目</p>
+      {/* 内容区域 */}
+      {activeTab === 'reading' && (
+        <div>
+          {readRecords.length === 0 ? (
+            <p className="py-8 text-center text-muted-foreground">还没有阅读记录</p>
           ) : (
             <div className="space-y-3">
-              {articles.map((article) => {
-                const isRead = readArticleIds.has(article.id);
-                const record = readRecords.find((r) => r.article_id === article.id);
-                return (
-                  <Card key={article.id} className="border-border">
-                    <CardContent className="flex items-center justify-between py-3">
-                      <div className="flex items-center gap-3">
-                        {isRead ? (
-                          <CheckCircle2 className="h-5 w-5 text-green-600" />
-                        ) : (
-                          <BookOpen className="h-5 w-5 text-muted-foreground" />
-                        )}
-                        <div>
-                          <Link href={`/article/${article.id}`} className="text-sm font-medium hover:text-primary">
-                            《{article.title}》
-                          </Link>
-                          <p className="text-xs text-muted-foreground">{article.author}</p>
-                        </div>
+              {readRecords.map((r) => (
+                <Card key={r.id} className="border-border">
+                  <CardContent className="py-3 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-green-50 text-green-600">
+                        <Check className="h-4 w-4" />
                       </div>
-                      {isRead && record && (
-                        <span className="text-xs text-muted-foreground">
-                          {new Date(record.created_at).toLocaleDateString('zh-CN')}
-                        </span>
-                      )}
-                    </CardContent>
-                  </Card>
-                );
-              })}
+                      <div>
+                        <p className="text-sm font-medium">《{(r.articles as unknown as { title: string }[])?.[0]?.title || '未知'}》</p>
+                        <p className="text-xs text-muted-foreground">{(r.articles as unknown as { author: string }[])?.[0]?.author}</p>
+                      </div>
+                    </div>
+                    <span className="text-xs text-muted-foreground">
+                      {new Date(r.created_at).toLocaleDateString('zh-CN')}
+                    </span>
+                  </CardContent>
+                </Card>
+              ))}
             </div>
           )}
-        </TabsContent>
+        </div>
+      )}
 
-        <TabsContent value="posts" className="mt-4">
+      {activeTab === 'posts' && (
+        <div>
           {myPosts.length === 0 ? (
-            <p className="text-center text-muted-foreground py-8">暂无心得</p>
+            <p className="py-8 text-center text-muted-foreground">还没有发布心得</p>
           ) : (
             <div className="space-y-3">
-              {myPosts.map((post) => (
-                <Card key={post.id} className="border-border">
+              {myPosts.map((p) => (
+                <Card key={p.id} className="border-border">
                   <CardContent className="py-3">
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <span>《{(post.articles as { title: string } | null)?.title}》</span>
-                      <span>·</span>
-                      <span>{new Date(post.created_at).toLocaleDateString('zh-CN')}</span>
-                    </div>
-                    <p className="mt-1 text-sm line-clamp-3">{post.content}</p>
+                    <p className="text-sm leading-relaxed whitespace-pre-wrap">{p.content}</p>
                     <div className="mt-2 flex items-center gap-3 text-xs text-muted-foreground">
-                      <span>❤ {post.likes_count}</span>
-                      <span>💬 {post.comments_count}</span>
+                      <span>《{(p.articles as unknown as { title: string }[])?.[0]?.title || '未知'}》</span>
+                      <span>·</span>
+                      <span className="flex items-center gap-1"><Heart className="h-3 w-3" />{p.likes_count}</span>
+                      <span className="flex items-center gap-1"><MessageSquare className="h-3 w-3" />{p.comments_count}</span>
                     </div>
                   </CardContent>
                 </Card>
               ))}
             </div>
           )}
-        </TabsContent>
+        </div>
+      )}
 
-        <TabsContent value="quotes" className="mt-4">
+      {activeTab === 'quotes' && (
+        <div>
           {myQuotes.length === 0 ? (
-            <p className="text-center text-muted-foreground py-8">暂无金句</p>
+            <p className="py-8 text-center text-muted-foreground">还没有发布金句</p>
           ) : (
             <div className="space-y-3">
               {myQuotes.map((q) => (
                 <Card key={q.id} className="border-border">
                   <CardContent className="py-3">
-                    <p className="font-quote text-primary">&ldquo;{q.quote}&rdquo;</p>
+                    <p className="font-serif text-sm leading-relaxed" style={{ fontFamily: 'var(--font-zcool-xiaowei), serif' }}>
+                      {q.quote}
+                    </p>
                     {q.reflection && (
-                      <p className="mt-1 text-sm text-muted-foreground italic">{q.reflection}</p>
+                      <p className="mt-1 text-xs text-muted-foreground italic">—— {q.reflection}</p>
                     )}
                     <div className="mt-2 text-xs text-muted-foreground">
-                      《{(q.articles as { title: string } | null)?.title}》 · ❤ {q.likes_count}
+                      《{(q.articles as unknown as { title: string }[])?.[0]?.title || '未知'}》 · <Heart className="inline h-3 w-3" /> {q.likes_count}
                     </div>
                   </CardContent>
                 </Card>
               ))}
             </div>
           )}
-        </TabsContent>
+        </div>
+      )}
 
-        <TabsContent value="favorites" className="mt-4">
-          {myFavorites.length === 0 ? (
-            <p className="text-center text-muted-foreground py-8">暂无收藏</p>
+      {activeTab === 'favorites' && (
+        <div>
+          {favorites.length === 0 ? (
+            <p className="py-8 text-center text-muted-foreground">还没有收藏</p>
           ) : (
             <div className="space-y-3">
-              {favoriteArticles.map((fav) => {
-                const article = articles.find((a) => String(a.id) === fav.target_id);
-                if (!article) return null;
+              {favorites.map((f) => {
+                const article = articles.find((a) => String(a.id) === f.target_id);
                 return (
-                  <Card key={fav.id} className="border-border">
-                    <CardContent className="flex items-center gap-3 py-3">
-                      <Star className="h-4 w-4 text-amber-600 fill-amber-600" />
-                      <Link href={`/article/${article.id}`} className="text-sm font-medium hover:text-primary">
-                        《{article.title}》- {article.author}
-                      </Link>
+                  <Card key={f.id} className="border-border">
+                    <CardContent className="py-3 flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <Heart className="h-4 w-4 text-destructive fill-destructive" />
+                        <div>
+                          <p className="text-sm font-medium">
+                            {f.target_type === 'article' ? '篇目' : '金句'}：{article ? `《${article.title}》` : f.target_id}
+                          </p>
+                        </div>
+                      </div>
+                      <span className="text-xs text-muted-foreground">
+                        {new Date(f.created_at).toLocaleDateString('zh-CN')}
+                      </span>
                     </CardContent>
                   </Card>
                 );
               })}
-              {favoriteQuotes.map((fav) => (
-                <Card key={fav.id} className="border-border">
-                  <CardContent className="py-3">
-                    <div className="flex items-center gap-2">
-                      <Star className="h-4 w-4 text-amber-600 fill-amber-600" />
-                      <span className="text-xs text-muted-foreground">收藏的金句</span>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
             </div>
           )}
-        </TabsContent>
-      </Tabs>
+        </div>
+      )}
     </div>
   );
 }

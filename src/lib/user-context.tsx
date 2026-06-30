@@ -1,6 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { supabase } from '@/lib/supabase-browser';
 
 interface User {
   id: string;
@@ -13,6 +14,7 @@ interface UserContextType {
   user: User | null;
   loading: boolean;
   setUser: (user: User | null) => void;
+  setNickname: (nickname: string) => void;
   refreshUser: () => Promise<void>;
   logout: () => void;
 }
@@ -47,22 +49,27 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
-      const res = await fetch(`/api/users?id=${userId}`);
-      if (res.ok) {
-        const data = await res.json();
-        if (data.user) {
-          setUser(data.user);
-          setStoredUserId(data.user.id);
-        } else {
-          removeStoredUserId();
-          setUser(null);
-        }
+      const { data } = await supabase
+        .from('users')
+        .select('id, nickname, is_admin, created_at')
+        .eq('id', userId)
+        .single();
+      if (data) {
+        setUser(data as User);
+        setStoredUserId(data.id);
+      } else {
+        removeStoredUserId();
+        setUser(null);
       }
     } catch {
       // 网络错误时保留现有状态
     } finally {
       setLoading(false);
     }
+  }, []);
+
+  const setNickname = useCallback((nickname: string) => {
+    setUser((prev) => prev ? { ...prev, nickname } : prev);
   }, []);
 
   const logout = useCallback(() => {
@@ -75,7 +82,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   }, [refreshUser]);
 
   return (
-    <UserContext.Provider value={{ user, loading, setUser, refreshUser, logout }}>
+    <UserContext.Provider value={{ user, loading, setUser, setNickname, refreshUser, logout }}>
       {children}
     </UserContext.Provider>
   );

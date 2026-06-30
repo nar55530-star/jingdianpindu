@@ -1,13 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useUser } from '@/lib/user-context';
+import { supabase } from '@/lib/supabase-browser';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
-import { Separator } from '@/components/ui/separator';
 import {
   BookOpen,
   CheckCircle2,
@@ -18,7 +18,6 @@ import {
   Quote,
   Send,
   Pin,
-  Trash2,
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -69,115 +68,131 @@ export default function ArticleDetailPage() {
   const [newCommentContent, setNewCommentContent] = useState('');
   const [likedPosts, setLikedPosts] = useState<Set<string>>(new Set());
 
-  useEffect(() => {
+  const loadArticle = useCallback(async () => {
     if (!articleId) return;
+    const { data } = await supabase
+      .from('articles')
+      .select('*')
+      .eq('id', articleId)
+      .single();
+    if (data) setArticle(data as unknown as Article);
+  }, [articleId]);
 
-    // 获取篇目信息
-    fetch('/api/articles')
-      .then((res) => res.json())
-      .then((data) => {
-        const found = data.articles?.find((a: Article) => a.id === articleId);
-        if (found) setArticle(found);
-      });
+  const loadReadingRecord = useCallback(async () => {
+    if (!user?.id || !articleId) return;
+    const { data } = await supabase
+      .from('reading_records')
+      .select('article_id')
+      .eq('user_id', user.id)
+      .eq('article_id', articleId);
+    if (data && data.length > 0) setIsRead(true);
+  }, [user?.id, articleId]);
 
-    // 获取阅读记录
-    if (user?.id) {
-      fetch(`/api/reading-records?user_id=${user.id}`)
-        .then((res) => res.json())
-        .then((data) => {
-          if (data.records) {
-            setIsRead(data.records.some((r: { article_id: number }) => r.article_id === articleId));
-          }
-        });
+  const loadFavorite = useCallback(async () => {
+    if (!user?.id || !articleId) return;
+    const { data } = await supabase
+      .from('favorites')
+      .select('id')
+      .eq('user_id', user.id)
+      .eq('target_type', 'article')
+      .eq('target_id', String(articleId));
+    if (data && data.length > 0) setIsFavorited(true);
+  }, [user?.id, articleId]);
 
-      // 检查收藏
-      fetch(`/api/favorites?user_id=${user.id}&target_type=article`)
-        .then((res) => res.json())
-        .then((data) => {
-          if (data.favorites) {
-            setIsFavorited(data.favorites.some((f: { target_id: string }) => f.target_id === String(articleId)));
-          }
-        });
-    }
+  const loadPosts = useCallback(async () => {
+    if (!articleId) return;
+    const { data } = await supabase
+      .from('posts')
+      .select('id, user_id, article_id, content, likes_count, comments_count, is_pinned, created_at, users(nickname), articles(title)')
+      .eq('article_id', articleId)
+      .order('is_pinned', { ascending: false })
+      .order('created_at', { ascending: false });
+    if (data) setPosts(data as unknown as Post[]);
+  }, [articleId]);
 
-    // 获取相关帖子
-    fetch(`/api/posts?article_id=${articleId}`)
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.posts) setPosts(data.posts);
-      });
-  }, [articleId, user?.id]);
+  const loadLikedPosts = useCallback(async () => {
+    if (!user?.id) return;
+    const { data } = await supabase
+      .from('post_likes')
+      .select('post_id')
+      .eq('user_id', user.id);
+    if (data) setLikedPosts(new Set(data.map((l: { post_id: string }) => l.post_id)));
+  }, [user?.id]);
+
+  useEffect(() => {
+    loadArticle();
+    loadPosts();
+  }, [loadArticle, loadPosts]);
+
+  useEffect(() => {
+    loadReadingRecord();
+    loadFavorite();
+    loadLikedPosts();
+  }, [loadReadingRecord, loadFavorite, loadLikedPosts]);
 
   const handleCheckIn = async () => {
     if (!user) return;
-    const res = await fetch('/api/reading-records', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ user_id: user.id, article_id: articleId }),
-    });
-    const data = await res.json();
-    if (data.already_read) {
-      setIsRead(true);
-    } else {
-      setIsRead(true);
+    const { data: existing } = await supabase
+      .from('reading_records')
+      .select('id')
+      .eq('user_id', user.id)
+      .eq('article_id', articleId);
+    if (!existing || existing.length === 0) {
+      await supabase
+        .from('reading_records')
+        .insert({ user_id: user.id, article_id: articleId });
     }
+    setIsRead(true);
   };
 
   const handleFavorite = async () => {
     if (!user) return;
     if (isFavorited) {
-      await fetch(`/api/favorites?user_id=${user.id}&target_type=article&target_id=${articleId}`, {
-        method: 'DELETE',
-      });
+      await supabase
+        .from('favorites')
+        .delete()
+        .eq('user_id', user.id)
+        .eq('target_type', 'article')
+        .eq('target_id', String(articleId));
       setIsFavorited(false);
     } else {
-      await fetch('/api/favorites', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: user.id, target_type: 'article', target_id: String(articleId) }),
-      });
+      await supabase
+        .from('favorites')
+        .insert({ user_id: user.id, target_type: 'article', target_id: String(articleId) });
       setIsFavorited(true);
     }
   };
 
   const handlePostSubmit = async () => {
     if (!user || !newPostContent.trim()) return;
-    const res = await fetch('/api/posts', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        user_id: user.id,
-        article_id: articleId,
-        content: newPostContent.trim(),
-      }),
-    });
-    const data = await res.json();
-    if (data.post) {
-      setPosts([data.post, ...posts]);
+    const { data } = await supabase
+      .from('posts')
+      .insert({ user_id: user.id, article_id: articleId, content: newPostContent.trim() })
+      .select('id, user_id, article_id, content, likes_count, comments_count, is_pinned, created_at, users(nickname), articles(title)')
+      .single();
+    if (data) {
+      setPosts([data as unknown as Post, ...posts]);
       setNewPostContent('');
     }
   };
 
   const handleLikePost = async (postId: string) => {
     if (!user) return;
-    const res = await fetch('/api/post-likes', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ post_id: postId, user_id: user.id }),
-    });
-    const data = await res.json();
-    setLikedPosts((prev) => {
-      const next = new Set(prev);
-      if (data.liked) next.add(postId);
-      else next.delete(postId);
-      return next;
-    });
-    // 更新帖子点赞数
-    setPosts(posts.map((p) =>
-      p.id === postId
-        ? { ...p, likes_count: data.liked ? p.likes_count + 1 : Math.max(0, p.likes_count - 1) }
-        : p
-    ));
+    if (likedPosts.has(postId)) {
+      await supabase
+        .from('post_likes')
+        .delete()
+        .eq('post_id', postId)
+        .eq('user_id', user.id);
+      setLikedPosts((prev) => { const n = new Set(prev); n.delete(postId); return n; });
+      setPosts(posts.map((p) => p.id === postId ? { ...p, likes_count: Math.max(0, p.likes_count - 1) } : p));
+    } else {
+      await supabase
+        .from('post_likes')
+        .insert({ post_id: postId, user_id: user.id });
+      setLikedPosts((prev) => { const n = new Set(prev); n.add(postId); return n; });
+      setPosts(posts.map((p) => p.id === postId ? { ...p, likes_count: p.likes_count + 1 } : p));
+    }
   };
 
   const handleLoadComments = async (postId: string) => {
@@ -186,35 +201,26 @@ export default function ArticleDetailPage() {
       return;
     }
     if (!comments[postId]) {
-      const res = await fetch(`/api/comments?post_id=${postId}`);
-      const data = await res.json();
-      if (data.comments) {
-        setComments({ ...comments, [postId]: data.comments });
-      }
+      const { data } = await supabase
+        .from('comments')
+        .select('id, content, created_at, user_id, users(nickname)')
+        .eq('post_id', postId)
+        .order('created_at', { ascending: true });
+      if (data) setComments({ ...comments, [postId]: data as unknown as Comment[] });
     }
     setExpandedPostId(postId);
   };
 
   const handleCommentSubmit = async (postId: string) => {
     if (!user || !newCommentContent.trim()) return;
-    const res = await fetch('/api/comments', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        post_id: postId,
-        user_id: user.id,
-        content: newCommentContent.trim(),
-      }),
-    });
-    const data = await res.json();
-    if (data.comment) {
-      setComments({
-        ...comments,
-        [postId]: [...(comments[postId] || []), data.comment],
-      });
-      setPosts(posts.map((p) =>
-        p.id === postId ? { ...p, comments_count: p.comments_count + 1 } : p
-      ));
+    const { data } = await supabase
+      .from('comments')
+      .insert({ post_id: postId, user_id: user.id, content: newCommentContent.trim() })
+      .select('id, content, created_at, user_id, users(nickname)')
+      .single();
+    if (data) {
+      setComments({ ...comments, [postId]: [...(comments[postId] || []), data as unknown as Comment] });
+      setPosts(posts.map((p) => p.id === postId ? { ...p, comments_count: p.comments_count + 1 } : p));
       setNewCommentContent('');
     }
   };
@@ -229,13 +235,11 @@ export default function ArticleDetailPage() {
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
-      {/* 返回按钮 */}
       <Button variant="ghost" onClick={() => router.push('/')} className="mb-4 -ml-4">
         <ArrowLeft className="mr-2 h-4 w-4" />
         返回首页
       </Button>
 
-      {/* 篇目信息卡片 */}
       <Card className="border-border">
         <CardHeader className="bg-gradient-to-r from-primary/10 to-accent/10 rounded-t-lg">
           <div className="flex items-start justify-between">
@@ -260,7 +264,6 @@ export default function ArticleDetailPage() {
             {article.description || '暂无简介'}
           </p>
 
-          {/* 文章正文 */}
           {article.content && (
             <div className="mt-6 rounded-lg border border-border bg-card p-6">
               <div className="mb-4 flex items-center gap-2 text-primary">
@@ -277,7 +280,6 @@ export default function ArticleDetailPage() {
             </div>
           )}
 
-          {/* 操作按钮 */}
           <div className="mt-6 flex flex-wrap gap-3">
             <Button
               className="bg-primary text-primary-foreground hover:bg-primary/90"
@@ -316,7 +318,6 @@ export default function ArticleDetailPage() {
         </CardContent>
       </Card>
 
-      {/* 发表心得 */}
       {user && (
         <Card className="mt-6 border-border">
           <CardHeader>
@@ -324,7 +325,7 @@ export default function ArticleDetailPage() {
           </CardHeader>
           <CardContent>
             <Textarea
-              placeholder="写下你阅读《{article.title}》的感想..."
+              placeholder={`写下你阅读《${article.title}》的感想...`}
               value={newPostContent}
               onChange={(e) => setNewPostContent(e.target.value)}
               rows={4}
@@ -343,7 +344,6 @@ export default function ArticleDetailPage() {
         </Card>
       )}
 
-      {/* 心得列表 */}
       <div className="mt-6">
         <h3 className="mb-4 font-serif text-lg font-medium">相关心得</h3>
         {posts.length === 0 ? (
@@ -358,11 +358,11 @@ export default function ArticleDetailPage() {
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-2">
                       <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary text-sm font-serif">
-                        {(post.users as { nickname: string } | null)?.nickname?.charAt(0) || '?'}
+                        {(post.users as unknown as { nickname: string })?.nickname?.charAt(0) || '?'}
                       </div>
                       <div>
                         <span className="text-sm font-medium">
-                          {(post.users as { nickname: string } | null)?.nickname || '未知用户'}
+                          {(post.users as unknown as { nickname: string })?.nickname || '未知用户'}
                         </span>
                         <span className="ml-2 text-xs text-muted-foreground">
                           {new Date(post.created_at).toLocaleDateString('zh-CN')}
@@ -395,17 +395,16 @@ export default function ArticleDetailPage() {
                     </button>
                   </div>
 
-                  {/* 评论区域 */}
                   {expandedPostId === post.id && (
                     <div className="mt-4 border-t border-border pt-4">
                       {(comments[post.id] || []).map((comment) => (
                         <div key={comment.id} className="mb-3 flex gap-2">
                           <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-accent/50 text-xs">
-                            {(comment.users as { nickname: string } | null)?.nickname?.charAt(0) || '?'}
+                            {(comment.users as unknown as { nickname: string })?.nickname?.charAt(0) || '?'}
                           </div>
                           <div>
                             <span className="text-xs font-medium">
-                              {(comment.users as { nickname: string } | null)?.nickname || '未知'}
+                              {(comment.users as unknown as { nickname: string })?.nickname || '未知'}
                             </span>
                             <p className="text-sm text-muted-foreground">{comment.content}</p>
                           </div>

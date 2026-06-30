@@ -1,5 +1,8 @@
 'use client';
 
+import { useState } from 'react';
+import { useUser } from '@/lib/user-context';
+import { supabase } from '@/lib/supabase-browser';
 import {
   Dialog,
   DialogContent,
@@ -10,80 +13,71 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { useState, useEffect } from 'react';
-import { useUser } from '@/lib/user-context';
-import { BookOpen } from 'lucide-react';
 
 export function NicknameDialog() {
   const { user, setUser } = useUser();
   const [nickname, setNickname] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
 
-  // 客户端挂载后检查是否需要弹出昵称设置
-  useEffect(() => {
-    if (!user) {
-      const stored = localStorage.getItem('classic_reading_user_id');
-      if (!stored) setOpen(true);
-    }
-  }, [user]);
+  if (user) return null;
 
   const handleSubmit = async () => {
     if (!nickname.trim()) return;
-    setLoading(true);
+    setSubmitting(true);
     try {
-      const res = await fetch('/api/users', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nickname: nickname.trim() }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setUser(data.user);
-        if (typeof window !== 'undefined') {
-          localStorage.setItem('classic_reading_user_id', data.user.id);
-        }
+      const { data, error } = await supabase
+        .from('users')
+        .insert({ nickname: nickname.trim() })
+        .select('id, nickname, is_admin, created_at')
+        .single();
+
+      if (error) throw error;
+      if (data) {
+        setUser({
+          id: data.id,
+          nickname: data.nickname,
+          is_admin: data.is_admin,
+          created_at: data.created_at,
+        });
+        localStorage.setItem('classic_reading_user_id', data.id);
         setOpen(false);
       }
-    } catch {
-      // 错误处理
+    } catch (err) {
+      console.error('设置昵称失败:', err);
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   };
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent className="sm:max-w-md" onPointerDownOutside={(e) => e.preventDefault()}>
+      <DialogContent className="sm:max-w-[400px]" onPointerDownOutside={(e) => e.preventDefault()}>
         <DialogHeader>
-          <div className="mx-auto mb-2 flex h-14 w-14 items-center justify-center rounded-full bg-primary/10">
-            <BookOpen className="h-7 w-7 text-primary" />
-          </div>
-          <DialogTitle className="text-center font-serif text-xl">欢迎来到经典品读</DialogTitle>
-          <DialogDescription className="text-center">
-            请输入你的昵称，开始经典阅读之旅
+          <DialogTitle className="font-serif">欢迎来到经典品读</DialogTitle>
+          <DialogDescription>
+            请设置你的昵称，用于在论坛交流中展示
           </DialogDescription>
         </DialogHeader>
         <div className="py-4">
           <Input
-            placeholder="请输入昵称"
+            placeholder="输入你的昵称"
             value={nickname}
             onChange={(e) => setNickname(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleSubmit();
+            }}
             maxLength={20}
-            className="text-center text-lg"
+            autoFocus
           />
-          <p className="mt-2 text-center text-xs text-muted-foreground">
-            昵称将用于论坛发帖、评论和打卡展示
-          </p>
         </div>
         <DialogFooter>
           <Button
             onClick={handleSubmit}
-            disabled={!nickname.trim() || loading}
-            className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
+            disabled={!nickname.trim() || submitting}
+            className="bg-primary text-primary-foreground hover:bg-primary/90"
           >
-            {loading ? '设置中...' : '开始阅读'}
+            {submitting ? '设置中...' : '开始阅读'}
           </Button>
         </DialogFooter>
       </DialogContent>

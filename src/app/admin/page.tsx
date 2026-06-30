@@ -1,28 +1,12 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useUser } from '@/lib/user-context';
+import { supabase } from '@/lib/supabase-browser';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import {
   Select,
   SelectContent,
@@ -31,40 +15,43 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import {
-  ArrowLeft,
-  Plus,
-  Pin,
-  PinOff,
-  Trash2,
-  Megaphone,
   BookOpen,
-  MessageSquare,
   Users,
-  Settings,
+  MessageSquare,
+  Quote,
+  Pin,
+  Trash2,
+  Plus,
+  Trophy,
+  Megaphone,
 } from 'lucide-react';
-import { useRouter } from 'next/navigation';
-import { useCallback } from 'react';
-import Link from 'next/link';
 
 interface Article {
   id: number;
   title: string;
   author: string;
-  description: string | null;
+  description: string;
+  content: string | null;
   sort_order: number;
 }
 
 interface Post {
   id: string;
   user_id: string;
-  content: string;
   article_id: number;
+  content: string;
   likes_count: number;
   comments_count: number;
   is_pinned: boolean;
   created_at: string;
   users: { nickname: string } | null;
   articles: { title: string } | null;
+}
+
+interface LeaderboardEntry {
+  user_id: string;
+  nickname: string;
+  count: number;
 }
 
 interface Announcement {
@@ -75,440 +62,300 @@ interface Announcement {
   users: { nickname: string } | null;
 }
 
-interface ReaderStat {
-  user_id: string;
-  nickname: string;
-  count: number;
-}
-
 export default function AdminPage() {
-  const router = useRouter();
   const { user } = useUser();
   const [articles, setArticles] = useState<Article[]>([]);
   const [posts, setPosts] = useState<Post[]>([]);
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
-  const [leaderboard, setLeaderboard] = useState<ReaderStat[]>([]);
-  const [showArticleDialog, setShowArticleDialog] = useState(false);
-  const [showAnnouncementDialog, setShowAnnouncementDialog] = useState(false);
-  const [newArticle, setNewArticle] = useState({ title: '', author: '', description: '', sort_order: 0 });
+  const [newArticle, setNewArticle] = useState({ title: '', author: '', description: '', content: '' });
   const [newAnnouncement, setNewAnnouncement] = useState({ title: '', content: '' });
 
   const loadAll = useCallback(async () => {
-    const [articlesRes, postsRes, announcementsRes, leaderboardRes] = await Promise.all([
-      fetch('/api/articles'),
-      fetch('/api/posts'),
-      fetch('/api/announcements'),
-      fetch('/api/reading-records'),
+    const [articlesRes, postsRes, recordsRes, announcementsRes] = await Promise.all([
+      supabase.from('articles').select('*').order('sort_order'),
+      supabase.from('posts').select('id, user_id, article_id, content, likes_count, comments_count, is_pinned, created_at, users(nickname), articles(title)').order('created_at', { ascending: false }),
+      supabase.from('reading_records').select('user_id, users(nickname)'),
+      supabase.from('announcements').select('id, title, content, created_at, users(nickname)').order('created_at', { ascending: false }),
     ]);
-
-    const articlesData = await articlesRes.json();
-    const postsData = await postsRes.json();
-    const announcementsData = await announcementsRes.json();
-    const leaderboardData = await leaderboardRes.json();
-
-    if (articlesData.articles) setArticles(articlesData.articles);
-    if (postsData.posts) setPosts(postsData.posts);
-    if (announcementsData.announcements) setAnnouncements(announcementsData.announcements);
-    if (leaderboardData.leaderboard) setLeaderboard(leaderboardData.leaderboard);
+    if (articlesRes.data) setArticles(articlesRes.data as unknown as Article[]);
+    if (postsRes.data) setPosts(postsRes.data as unknown as Post[]);
+    if (announcementsRes.data) setAnnouncements(announcementsRes.data as unknown as Announcement[]);
+    if (recordsRes.data) {
+      const counts: Record<string, { nickname: string; count: number }> = {};
+      for (const r of recordsRes.data) {
+        const uid = r.user_id;
+        const nick = ((r.users as unknown as { nickname: string }) || {}).nickname || '未知';
+        if (!counts[uid]) counts[uid] = { nickname: nick, count: 0 };
+        counts[uid].count++;
+      }
+      setLeaderboard(
+        Object.entries(counts)
+          .map(([user_id, v]) => ({ user_id, ...v }))
+          .sort((a, b) => b.count - a.count)
+      );
+    }
   }, []);
 
   useEffect(() => {
-    if (!user?.is_admin) return;
-    loadAll();
+    if (user?.is_admin) loadAll();
   }, [user?.is_admin, loadAll]);
 
   const handleCreateArticle = async () => {
     if (!newArticle.title || !newArticle.author) return;
-    const res = await fetch('/api/articles', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newArticle),
+    const maxOrder = articles.length > 0 ? Math.max(...articles.map((a) => a.sort_order)) : 0;
+    await supabase.from('articles').insert({
+      title: newArticle.title,
+      author: newArticle.author,
+      description: newArticle.description,
+      content: newArticle.content || null,
+      sort_order: maxOrder + 1,
     });
-    if (res.ok) {
-      setShowArticleDialog(false);
-      setNewArticle({ title: '', author: '', description: '', sort_order: 0 });
-      loadAll();
-    }
+    setNewArticle({ title: '', author: '', description: '', content: '' });
+    loadAll();
   };
 
   const handleDeleteArticle = async (id: number) => {
-    if (!confirm('确认删除此篇目？')) return;
-    await fetch(`/api/articles?id=${id}`, { method: 'DELETE' });
+    await supabase.from('articles').delete().eq('id', id);
     loadAll();
   };
 
   const handleTogglePin = async (postId: string, isPinned: boolean) => {
-    await fetch('/api/posts', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: postId, is_pinned: !isPinned }),
-    });
+    await supabase.from('posts').update({ is_pinned: !isPinned }).eq('id', postId);
     loadAll();
   };
 
   const handleDeletePost = async (postId: string) => {
-    if (!confirm('确认删除此帖子？')) return;
-    await fetch(`/api/posts?id=${postId}`, { method: 'DELETE' });
+    await supabase.from('posts').delete().eq('id', postId);
     loadAll();
   };
 
   const handleCreateAnnouncement = async () => {
     if (!user || !newAnnouncement.title || !newAnnouncement.content) return;
-    const res = await fetch('/api/announcements', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ user_id: user.id, ...newAnnouncement }),
+    await supabase.from('announcements').insert({
+      title: newAnnouncement.title,
+      content: newAnnouncement.content,
+      user_id: user.id,
     });
-    if (res.ok) {
-      setShowAnnouncementDialog(false);
-      setNewAnnouncement({ title: '', content: '' });
-      loadAll();
-    }
+    setNewAnnouncement({ title: '', content: '' });
+    loadAll();
   };
 
   const handleDeleteAnnouncement = async (id: string) => {
-    if (!confirm('确认删除此公告？')) return;
-    await fetch(`/api/announcements?id=${id}`, { method: 'DELETE' });
+    await supabase.from('announcements').delete().eq('id', id);
     loadAll();
   };
 
   if (!user?.is_admin) {
     return (
-      <div className="flex min-h-[50vh] items-center justify-center">
-        <Card className="max-w-md border-border p-8 text-center">
-          <Settings className="mx-auto h-12 w-12 text-muted-foreground/30" />
-          <h2 className="mt-4 font-serif text-lg font-medium">需要管理员权限</h2>
-          <p className="mt-2 text-sm text-muted-foreground">您不是管理员，无法访问此页面</p>
-          <Link href="/">
-            <Button className="mt-4 bg-primary text-primary-foreground hover:bg-primary/90">
-              返回首页
-            </Button>
-          </Link>
-        </Card>
+      <div className="flex items-center justify-center py-20">
+        <p className="text-muted-foreground">仅管理员可访问此页面</p>
       </div>
     );
   }
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" onClick={() => router.push('/')} size="sm">
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            返回
-          </Button>
-          <h1 className="font-serif text-2xl font-bold">管理后台</h1>
-        </div>
-      </div>
+    <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
+      <h1 className="mb-6 font-serif text-2xl font-bold text-foreground">管理后台</h1>
 
-      <Tabs defaultValue="articles">
-        <TabsList>
-          <TabsTrigger value="articles">
-            <BookOpen className="mr-1 h-4 w-4" />
-            篇目管理
-          </TabsTrigger>
-          <TabsTrigger value="posts">
-            <MessageSquare className="mr-1 h-4 w-4" />
-            帖子管理
-          </TabsTrigger>
-          <TabsTrigger value="announcements">
-            <Megaphone className="mr-1 h-4 w-4" />
-            公告管理
-          </TabsTrigger>
-          <TabsTrigger value="stats">
-            <Users className="mr-1 h-4 w-4" />
-            数据统计
-          </TabsTrigger>
-        </TabsList>
-
+      <div className="grid gap-6 md:grid-cols-2">
         {/* 篇目管理 */}
-        <TabsContent value="articles" className="mt-4">
-          <div className="flex justify-end mb-4">
-            <Button
-              onClick={() => setShowArticleDialog(true)}
-              className="bg-primary text-primary-foreground hover:bg-primary/90"
-              size="sm"
-            >
-              <Plus className="mr-2 h-4 w-4" />
-              添加篇目
-            </Button>
-          </div>
-          <Card>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>序号</TableHead>
-                  <TableHead>标题</TableHead>
-                  <TableHead>作者</TableHead>
-                  <TableHead>简介</TableHead>
-                  <TableHead className="text-right">操作</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {articles.map((article) => (
-                  <TableRow key={article.id}>
-                    <TableCell>{article.sort_order}</TableCell>
-                    <TableCell className="font-medium">《{article.title}》</TableCell>
-                    <TableCell>{article.author}</TableCell>
-                    <TableCell className="max-w-[200px] truncate text-muted-foreground">
-                      {article.description}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleDeleteArticle(article.id)}
-                        className="text-destructive hover:text-destructive"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </Card>
-        </TabsContent>
+        <Card className="border-border">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-lg font-serif">
+              <BookOpen className="h-5 w-5 text-primary" />
+              篇目管理
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3 mb-4">
+              <Input
+                placeholder="篇目标题"
+                value={newArticle.title}
+                onChange={(e) => setNewArticle({ ...newArticle, title: e.target.value })}
+              />
+              <Input
+                placeholder="作者"
+                value={newArticle.author}
+                onChange={(e) => setNewArticle({ ...newArticle, author: e.target.value })}
+              />
+              <Input
+                placeholder="简介"
+                value={newArticle.description}
+                onChange={(e) => setNewArticle({ ...newArticle, description: e.target.value })}
+              />
+              <Textarea
+                placeholder="正文内容（选填）"
+                value={newArticle.content}
+                onChange={(e) => setNewArticle({ ...newArticle, content: e.target.value })}
+                rows={3}
+              />
+              <Button onClick={handleCreateArticle} className="w-full bg-primary text-primary-foreground">
+                <Plus className="mr-2 h-4 w-4" /> 添加篇目
+              </Button>
+            </div>
+            <div className="space-y-2">
+              {articles.map((a) => (
+                <div key={a.id} className="flex items-center justify-between rounded-lg border border-border p-3">
+                  <div>
+                    <p className="text-sm font-medium">《{a.title}》</p>
+                    <p className="text-xs text-muted-foreground">{a.author}</p>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleDeleteArticle(a.id)}
+                    className="text-destructive hover:text-destructive"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
 
         {/* 帖子管理 */}
-        <TabsContent value="posts" className="mt-4">
-          <Card>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>作者</TableHead>
-                  <TableHead>篇目</TableHead>
-                  <TableHead>内容</TableHead>
-                  <TableHead>点赞</TableHead>
-                  <TableHead>状态</TableHead>
-                  <TableHead className="text-right">操作</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {posts.map((post) => (
-                  <TableRow key={post.id}>
-                    <TableCell>{(post.users as { nickname: string } | null)?.nickname}</TableCell>
-                    <TableCell>《{(post.articles as { title: string } | null)?.title}》</TableCell>
-                    <TableCell className="max-w-[200px] truncate">{post.content}</TableCell>
-                    <TableCell>{post.likes_count}</TableCell>
-                    <TableCell>
-                      {post.is_pinned && <Badge className="bg-amber-100 text-amber-700 text-xs">置顶</Badge>}
-                    </TableCell>
-                    <TableCell className="text-right space-x-1">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleTogglePin(post.id, post.is_pinned)}
-                      >
-                        {post.is_pinned ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}
+        <Card className="border-border">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-lg font-serif">
+              <MessageSquare className="h-5 w-5 text-primary" />
+              帖子管理
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2 max-h-[400px] overflow-y-auto">
+              {posts.map((p) => (
+                <div key={p.id} className="rounded-lg border border-border p-3">
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium">
+                          {(p.users as unknown as { nickname: string })?.nickname || '未知'}
+                        </span>
+                        {p.is_pinned && (
+                          <span className="text-xs text-amber-600">已置顶</span>
+                        )}
+                      </div>
+                      <p className="text-sm text-muted-foreground truncate">{p.content}</p>
+                      <p className="text-xs text-muted-foreground">
+                        《{(p.articles as unknown as { title: string })?.title || '未知'}》
+                      </p>
+                    </div>
+                    <div className="flex gap-1 ml-2">
+                      <Button variant="ghost" size="sm" onClick={() => handleTogglePin(p.id, p.is_pinned)}>
+                        <Pin className={`h-4 w-4 ${p.is_pinned ? 'text-amber-600' : ''}`} />
                       </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleDeletePost(post.id)}
-                        className="text-destructive hover:text-destructive"
-                      >
+                      <Button variant="ghost" size="sm" onClick={() => handleDeletePost(p.id)} className="text-destructive">
                         <Trash2 className="h-4 w-4" />
                       </Button>
-                    </TableCell>
-                  </TableRow>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* 阅读排行 */}
+        <Card className="border-border">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-lg font-serif">
+              <Trophy className="h-5 w-5 text-primary" />
+              阅读排行
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {leaderboard.length === 0 ? (
+              <p className="text-sm text-muted-foreground">暂无数据</p>
+            ) : (
+              <div className="space-y-2">
+                {leaderboard.map((entry, index) => (
+                  <div key={entry.user_id} className="flex items-center justify-between rounded-lg border border-border p-3">
+                    <div className="flex items-center gap-3">
+                      <span className={`flex h-7 w-7 items-center justify-center rounded-full text-sm font-bold ${
+                        index === 0 ? 'bg-amber-100 text-amber-700' :
+                        index === 1 ? 'bg-gray-100 text-gray-700' :
+                        index === 2 ? 'bg-orange-100 text-orange-700' :
+                        'bg-muted text-muted-foreground'
+                      }`}>
+                        {index + 1}
+                      </span>
+                      <span className="text-sm font-medium">{entry.nickname}</span>
+                    </div>
+                    <span className="text-sm text-primary font-medium">{entry.count} 篇</span>
+                  </div>
                 ))}
-              </TableBody>
-            </Table>
-          </Card>
-        </TabsContent>
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         {/* 公告管理 */}
-        <TabsContent value="announcements" className="mt-4">
-          <div className="flex justify-end mb-4">
-            <Button
-              onClick={() => setShowAnnouncementDialog(true)}
-              className="bg-primary text-primary-foreground hover:bg-primary/90"
-              size="sm"
-            >
-              <Plus className="mr-2 h-4 w-4" />
-              发布公告
-            </Button>
-          </div>
-          <Card>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>标题</TableHead>
-                  <TableHead>内容</TableHead>
-                  <TableHead>发布人</TableHead>
-                  <TableHead>时间</TableHead>
-                  <TableHead className="text-right">操作</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {announcements.map((a) => (
-                  <TableRow key={a.id}>
-                    <TableCell className="font-medium">{a.title}</TableCell>
-                    <TableCell className="max-w-[200px] truncate">{a.content}</TableCell>
-                    <TableCell>{(a.users as { nickname: string } | null)?.nickname}</TableCell>
-                    <TableCell className="text-muted-foreground text-sm">
-                      {new Date(a.created_at).toLocaleDateString('zh-CN')}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleDeleteAnnouncement(a.id)}
-                        className="text-destructive hover:text-destructive"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </Card>
-        </TabsContent>
+        <Card className="border-border">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-lg font-serif">
+              <Megaphone className="h-5 w-5 text-primary" />
+              公告管理
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3 mb-4">
+              <Input
+                placeholder="公告标题"
+                value={newAnnouncement.title}
+                onChange={(e) => setNewAnnouncement({ ...newAnnouncement, title: e.target.value })}
+              />
+              <Textarea
+                placeholder="公告内容"
+                value={newAnnouncement.content}
+                onChange={(e) => setNewAnnouncement({ ...newAnnouncement, content: e.target.value })}
+                rows={2}
+              />
+              <Button onClick={handleCreateAnnouncement} className="w-full bg-primary text-primary-foreground">
+                <Plus className="mr-2 h-4 w-4" /> 发布公告
+              </Button>
+            </div>
+            <div className="space-y-2">
+              {announcements.map((a) => (
+                <div key={a.id} className="flex items-start justify-between rounded-lg border border-border p-3">
+                  <div>
+                    <p className="text-sm font-medium">{a.title}</p>
+                    <p className="text-xs text-muted-foreground">{a.content}</p>
+                  </div>
+                  <Button variant="ghost" size="sm" onClick={() => handleDeleteAnnouncement(a.id)} className="text-destructive">
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
 
-        {/* 数据统计 */}
-        <TabsContent value="stats" className="mt-4">
-          <div className="grid gap-4 sm:grid-cols-3">
-            <Card>
-              <CardContent className="pt-6 text-center">
-                <BookOpen className="mx-auto h-8 w-8 text-primary" />
-                <p className="mt-2 text-3xl font-bold">{articles.length}</p>
-                <p className="text-sm text-muted-foreground">篇目总数</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="pt-6 text-center">
-                <MessageSquare className="mx-auto h-8 w-8 text-accent" />
-                <p className="mt-2 text-3xl font-bold">{posts.length}</p>
-                <p className="text-sm text-muted-foreground">心得总数</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="pt-6 text-center">
-                <Users className="mx-auto h-8 w-8 text-destructive" />
-                <p className="mt-2 text-3xl font-bold">{leaderboard.length}</p>
-                <p className="text-sm text-muted-foreground">活跃读者</p>
-              </CardContent>
-            </Card>
+      {/* 统计概览 */}
+      <Card className="mt-6 border-border">
+        <CardContent className="pt-6">
+          <div className="grid grid-cols-4 gap-4 text-center">
+            <div>
+              <p className="text-2xl font-bold text-primary">{articles.length}</p>
+              <p className="text-xs text-muted-foreground">篇目总数</p>
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-primary">{posts.length}</p>
+              <p className="text-xs text-muted-foreground">心得总数</p>
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-primary">{leaderboard.length}</p>
+              <p className="text-xs text-muted-foreground">活跃用户</p>
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-primary">{announcements.length}</p>
+              <p className="text-xs text-muted-foreground">公告数</p>
+            </div>
           </div>
-
-          <Card className="mt-4">
-            <CardHeader>
-              <CardTitle className="font-serif text-lg">阅读排行榜</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>排名</TableHead>
-                    <TableHead>昵称</TableHead>
-                    <TableHead>已读篇数</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {leaderboard.map((item, idx) => (
-                    <TableRow key={item.user_id}>
-                      <TableCell>
-                        <span
-                          className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold ${
-                            idx === 0
-                              ? 'bg-yellow-500 text-white'
-                              : idx === 1
-                                ? 'bg-gray-400 text-white'
-                                : idx === 2
-                                  ? 'bg-amber-700 text-white'
-                                  : 'bg-muted text-muted-foreground'
-                          }`}
-                        >
-                          {idx + 1}
-                        </span>
-                      </TableCell>
-                      <TableCell>{item.nickname}</TableCell>
-                      <TableCell>{item.count} 篇</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
-
-      {/* 添加篇目对话框 */}
-      <Dialog open={showArticleDialog} onOpenChange={setShowArticleDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="font-serif">添加篇目</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3">
-            <Input
-              placeholder="篇目标题"
-              value={newArticle.title}
-              onChange={(e) => setNewArticle({ ...newArticle, title: e.target.value })}
-            />
-            <Input
-              placeholder="作者"
-              value={newArticle.author}
-              onChange={(e) => setNewArticle({ ...newArticle, author: e.target.value })}
-            />
-            <Textarea
-              placeholder="简介"
-              value={newArticle.description}
-              onChange={(e) => setNewArticle({ ...newArticle, description: e.target.value })}
-              rows={3}
-            />
-            <Input
-              type="number"
-              placeholder="排序号"
-              value={newArticle.sort_order}
-              onChange={(e) => setNewArticle({ ...newArticle, sort_order: Number(e.target.value) })}
-            />
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowArticleDialog(false)}>取消</Button>
-            <Button
-              onClick={handleCreateArticle}
-              disabled={!newArticle.title || !newArticle.author}
-              className="bg-primary text-primary-foreground hover:bg-primary/90"
-            >
-              添加
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* 发布公告对话框 */}
-      <Dialog open={showAnnouncementDialog} onOpenChange={setShowAnnouncementDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="font-serif">发布公告</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3">
-            <Input
-              placeholder="公告标题"
-              value={newAnnouncement.title}
-              onChange={(e) => setNewAnnouncement({ ...newAnnouncement, title: e.target.value })}
-            />
-            <Textarea
-              placeholder="公告内容"
-              value={newAnnouncement.content}
-              onChange={(e) => setNewAnnouncement({ ...newAnnouncement, content: e.target.value })}
-              rows={4}
-            />
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowAnnouncementDialog(false)}>取消</Button>
-            <Button
-              onClick={handleCreateAnnouncement}
-              disabled={!newAnnouncement.title || !newAnnouncement.content}
-              className="bg-primary text-primary-foreground hover:bg-primary/90"
-            >
-              发布
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        </CardContent>
+      </Card>
     </div>
   );
 }
