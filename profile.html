@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>个人中心 - 经典品读</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
   <link href="https://fonts.googleapis.cn/css2?family=Noto+Serif+SC:wght@400;600;700&family=ZCOOL+XiaoWei&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/style.css">
 </head>
@@ -82,11 +82,11 @@
       document.getElementById('user-join-date').textContent = '加入于 ' + new Date(currentUser.created_at).toLocaleDateString('zh-CN');
 
       // 加载篇目
-      const { data: articles } = await supabase.from('articles').select('*').order('sort_order', { ascending: true });
+      const { data: articles } = await db.from('articles').select('*').order('sort_order', { ascending: true });
       if (articles) articles.forEach(a => allArticles[a.id] = a);
 
       // 阅读进度
-      const { data: records } = await supabase.from('reading_records').select('article_id').eq('user_id', currentUser.id);
+      const { data: records } = await db.from('reading_records').select('article_id').eq('user_id', currentUser.id);
       const totalArticles = Object.keys(allArticles).length;
       const readCount = records ? records.length : 0;
       const percent = totalArticles > 0 ? Math.round(readCount / totalArticles * 100) : 0;
@@ -116,7 +116,7 @@
     }
 
     async function loadMyPosts(container) {
-      const { data: posts } = await supabase.from('posts').select('*, articles(title)').eq('user_id', currentUser.id).order('created_at', { ascending: false });
+      const { data: posts } = await db.from('posts').select('*, articles(title)').eq('user_id', currentUser.id).order('created_at', { ascending: false });
       if (!posts || posts.length === 0) { container.innerHTML = '<p class="text-[var(--muted)] text-center py-8">暂无心得</p>'; return; }
       container.innerHTML = posts.map(p => {
         const articleTitle = Array.isArray(p.articles) ? (p.articles[0]?.title || '') : (p.articles?.title || '');
@@ -135,7 +135,7 @@
     }
 
     async function loadMyQuotes(container) {
-      const { data: quotes } = await supabase.from('golden_quotes').select('*, articles(title, author)').eq('user_id', currentUser.id).order('created_at', { ascending: false });
+      const { data: quotes } = await db.from('golden_quotes').select('*, articles(title, author)').eq('user_id', currentUser.id).order('created_at', { ascending: false });
       if (!quotes || quotes.length === 0) { container.innerHTML = '<p class="text-[var(--muted)] text-center py-8">暂无金句</p>'; return; }
       container.innerHTML = quotes.map(q => {
         const article = Array.isArray(q.articles) ? q.articles[0] : q.articles;
@@ -149,7 +149,7 @@
     }
 
     async function loadMyFavorites(container) {
-      const { data: favs } = await supabase.from('favorites').select('*').eq('user_id', currentUser.id).order('created_at', { ascending: false });
+      const { data: favs } = await db.from('favorites').select('*').eq('user_id', currentUser.id).order('created_at', { ascending: false });
       if (!favs || favs.length === 0) { container.innerHTML = '<p class="text-[var(--muted)] text-center py-8">暂无收藏</p>'; return; }
       container.innerHTML = favs.map(f => {
         if (f.target_type === 'article') {

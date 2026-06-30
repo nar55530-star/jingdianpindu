@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>经典品读学习交流平台</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
   <link href="https://fonts.googleapis.cn/css2?family=Noto+Serif+SC:wght@400;600;700&family=ZCOOL+XiaoWei&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/style.css">
 </head>
@@ -54,7 +54,7 @@
   <section class="max-w-6xl mx-auto px-4 pb-16">
     <h2 class="text-2xl font-bold text-[var(--primary)] mb-6" style="font-family:'Noto Serif SC',serif;">经典篇目</h2>
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" id="articles-grid">
-      <!-- 动态渲染 -->
+      <p class="text-[var(--muted)] col-span-3 text-center py-12">加载中...</p>
     </div>
   </section>
 
@@ -67,61 +67,42 @@
   <script src="js/app.js"></script>
   <script src="js/components.js"></script>
   <script>
-    const pageName = 'index';
+    highlightNav('index');
+    loadIndexPage();
 
-    async function initHomePage() {
+    // 用户设置昵称后也加载页面内容
+    window.onPageUserReady = function(user) {
+      loadUserDependentData();
+    };
+
+    async function loadIndexPage() {
       await initApp();
+      highlightNav('index');
 
-      // 渲染导航栏
-      document.getElementById('navbar').innerHTML = renderNavbar();
-      document.getElementById('nickname-modal-container').innerHTML = renderNicknameModal();
-      highlightNav(pageName);
-
-      // 加载公告
-      const { data: announcements } = await supabase.from('announcements').select('*, users(nickname)').order('created_at', { ascending: false }).limit(1);
-      if (announcements && announcements.length > 0) {
-        const ann = announcements[0];
-        document.getElementById('announcement-title').textContent = ann.title;
-        document.getElementById('announcement-content').textContent = ann.content;
-        document.getElementById('announcement-section').style.display = 'block';
-      }
-
-      // 加载篇目
-      const { data: articles } = await supabase.from('articles').select('*').order('sort_order', { ascending: true });
+      // 加载篇目（不需要登录）
+      const { data: articles, error } = await db.from('articles').select('*').order('sort_order', { ascending: true });
       const grid = document.getElementById('articles-grid');
 
-      // 获取用户阅读记录
-      let readIds = new Set();
-      if (currentUser) {
-        const { data: records } = await supabase.from('reading_records').select('article_id').eq('user_id', currentUser.id);
-        if (records) records.forEach(r => readIds.add(r.article_id));
-
-        // 显示进度
-        const total = articles ? articles.length : 0;
-        const read = readIds.size;
-        document.getElementById('progress-text').textContent = `${read} / ${total} 篇`;
-        document.getElementById('progress-bar').style.width = total > 0 ? `${(read / total * 100)}%` : '0%';
-        document.getElementById('progress-section').style.display = 'block';
-
-        // 徽章
-        renderBadges(read);
-
-        // 排行榜
-        await loadLeaderboard();
-      }
-
-      if (!articles || articles.length === 0) {
+      if (error || !articles || articles.length === 0) {
         grid.innerHTML = '<p class="text-[var(--muted)] col-span-3 text-center py-12">暂无篇目</p>';
         return;
       }
 
+      let readIds = new Set();
+      if (currentUser) {
+        const { data: records } = await db.from('reading_records').select('article_id').eq('user_id', currentUser.id);
+        if (records) records.forEach(r => readIds.add(r.article_id));
+        loadUserDependentData();
+      }
+
+      const gradients = [
+        'from-red-800 to-amber-700', 'from-amber-800 to-yellow-700',
+        'from-emerald-800 to-teal-700', 'from-blue-900 to-slate-700',
+        'from-purple-900 to-indigo-700', 'from-rose-800 to-pink-700'
+      ];
+
       grid.innerHTML = articles.map((a, i) => {
         const isRead = readIds.has(a.id);
-        const gradients = [
-          'from-red-800 to-amber-700', 'from-amber-800 to-yellow-700',
-          'from-emerald-800 to-teal-700', 'from-blue-900 to-slate-700',
-          'from-purple-900 to-indigo-700', 'from-rose-800 to-pink-700'
-        ];
         const gradient = gradients[i % gradients.length];
         return `
         <a href="article.html?id=${a.id}" class="group block bg-white rounded-xl border border-[var(--border)] overflow-hidden hover:shadow-lg hover:-translate-y-1 transition-all duration-300 no-underline">
@@ -138,47 +119,58 @@
       }).join('');
     }
 
-    function renderBadges(readCount) {
+    async function loadUserDependentData() {
+      if (!currentUser) return;
+
+      // 阅读进度
+      const { data: articles } = await db.from('articles').select('id').order('sort_order');
+      const { data: records } = await db.from('reading_records').select('article_id').eq('user_id', currentUser.id);
+      const total = articles ? articles.length : 0;
+      const read = records ? records.length : 0;
+      document.getElementById('progress-text').textContent = `${read} / ${total} 篇`;
+      document.getElementById('progress-bar').style.width = total > 0 ? `${(read / total * 100)}%` : '0%';
+      document.getElementById('progress-section').style.display = 'block';
+
+      // 徽章
       const badges = [
         { min: 1, name: '初读者', icon: '📖' },
         { min: 3, name: '思考者', icon: '💡' },
         { min: 5, name: '品读者', icon: '🎯' },
         { min: 6, name: '经典达人', icon: '🏆' },
       ];
-      const container = document.getElementById('badges-container');
-      container.innerHTML = badges.filter(b => readCount >= b.min).map(b =>
+      document.getElementById('badges-container').innerHTML = badges.filter(b => read >= b.min).map(b =>
         `<span class="inline-flex items-center gap-1 bg-[#FFF8F0] text-[var(--accent)] text-xs px-3 py-1 rounded-full border border-[var(--border)]">${b.icon} ${b.name}</span>`
       ).join('');
-    }
 
-    async function loadLeaderboard() {
-      const { data } = await supabase.from('reading_records').select('user_id, users(nickname)');
-      if (!data || data.length === 0) return;
-      const counts = {};
-      data.forEach(r => {
-        const nick = Array.isArray(r.users) ? (r.users[0]?.nickname || '未知') : (r.users?.nickname || '未知');
-        counts[nick] = (counts[nick] || 0) + 1;
-      });
-      const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 5);
-      if (sorted.length === 0) return;
-      document.getElementById('leaderboard-section').style.display = 'block';
-      document.getElementById('leaderboard-list').innerHTML = sorted.map(([name, count], i) =>
-        `<div class="flex items-center justify-between py-2 ${i > 0 ? 'border-t border-[var(--border)]' : ''}">
-          <span class="flex items-center gap-2"><span class="text-lg">${['🥇','🥈','🥉','4️⃣','5️⃣'][i]}</span><span class="text-sm font-medium">${name}</span></span>
-          <span class="text-sm text-[var(--accent)]">${count} 篇</span>
-        </div>`
-      ).join('');
-    }
-
-    // 昵称弹窗逻辑
-    document.addEventListener('click', function(e) {
-      if (e.target.id === 'nickname-submit') {
-        const input = document.getElementById('nickname-input');
-        if (input && input.value.trim()) setNickname(input.value.trim());
+      // 排行榜
+      const { data: lbData } = await db.from('reading_records').select('user_id, users(nickname)');
+      if (lbData && lbData.length > 0) {
+        const counts = {};
+        lbData.forEach(r => {
+          const nick = Array.isArray(r.users) ? (r.users[0]?.nickname || '未知') : (r.users?.nickname || '未知');
+          counts[nick] = (counts[nick] || 0) + 1;
+        });
+        const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 5);
+        if (sorted.length > 0) {
+          document.getElementById('leaderboard-section').style.display = 'block';
+          document.getElementById('leaderboard-list').innerHTML = sorted.map(([name, count], i) =>
+            `<div class="flex items-center justify-between py-2 ${i > 0 ? 'border-t border-[var(--border)]' : ''}">
+              <span class="flex items-center gap-2"><span class="text-lg">${['🥇','🥈','🥉','4️⃣','5️⃣'][i]}</span><span class="text-sm font-medium">${name}</span></span>
+              <span class="text-sm text-[var(--accent)]">${count} 篇</span>
+            </div>`
+          ).join('');
+        }
       }
-    });
 
-    initHomePage();
+      // 公告
+      const { data: announcements } = await db.from('announcements').select('*, users(nickname)').order('created_at', { ascending: false }).limit(1);
+      if (announcements && announcements.length > 0) {
+        const ann = announcements[0];
+        document.getElementById('announcement-title').textContent = ann.title;
+        document.getElementById('announcement-content').textContent = ann.content;
+        document.getElementById('announcement-section').style.display = 'block';
+      }
+    }
   </script>
 </body>
 </html>

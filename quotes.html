@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>金句墙 - 经典品读</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
   <link href="https://fonts.googleapis.cn/css2?family=Noto+Serif+SC:wght@400;600;700&family=ZCOOL+XiaoWei&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/style.css">
 </head>
@@ -47,7 +47,7 @@
       document.getElementById('navbar').innerHTML = renderNavbar();
       highlightNav('quotes');
 
-      const { data: articles } = await supabase.from('articles').select('*').order('sort_order', { ascending: true });
+      const { data: articles } = await db.from('articles').select('*').order('sort_order', { ascending: true });
       if (articles) {
         const filterEl = document.getElementById('article-filter');
         const selectEl = document.getElementById('quote-article-select');
@@ -66,7 +66,7 @@
 
       if (currentUser) {
         document.getElementById('quote-form').style.display = 'block';
-        const { data: likes } = await supabase.from('quote_likes').select('quote_id').eq('user_id', currentUser.id);
+        const { data: likes } = await db.from('quote_likes').select('quote_id').eq('user_id', currentUser.id);
         if (likes) likes.forEach(l => likedQuoteIds.add(l.quote_id));
       }
 
@@ -76,7 +76,7 @@
 
     async function loadQuotes() {
       const articleId = document.getElementById('article-filter').value;
-      let query = supabase.from('golden_quotes').select('*, users(nickname), articles(title, author)').order('created_at', { ascending: false });
+      let query = db.from('golden_quotes').select('*, users(nickname), articles(title, author)').order('created_at', { ascending: false });
       if (articleId) query = query.eq('article_id', articleId);
       const { data: quotes } = await query;
 
@@ -112,14 +112,14 @@
     async function toggleQuoteLike(quoteId) {
       if (!currentUser) { alert('请先设置昵称'); return; }
       if (likedQuoteIds.has(quoteId)) {
-        const { data: existing } = await supabase.from('quote_likes').select('id').eq('user_id', currentUser.id).eq('quote_id', quoteId).maybeSingle();
-        if (existing) { await supabase.from('quote_likes').delete().eq('id', existing.id); likedQuoteIds.delete(quoteId); }
+        const { data: existing } = await db.from('quote_likes').select('id').eq('user_id', currentUser.id).eq('quote_id', quoteId).maybeSingle();
+        if (existing) { await db.from('quote_likes').delete().eq('id', existing.id); likedQuoteIds.delete(quoteId); }
       } else {
-        await supabase.from('quote_likes').insert({ user_id: currentUser.id, quote_id: quoteId });
+        await db.from('quote_likes').insert({ user_id: currentUser.id, quote_id: quoteId });
         likedQuoteIds.add(quoteId);
       }
-      const { count } = await supabase.from('quote_likes').select('*', { count: 'exact', head: true }).eq('quote_id', quoteId);
-      await supabase.from('golden_quotes').update({ likes_count: count }).eq('id', quoteId);
+      const { count } = await db.from('quote_likes').select('*', { count: 'exact', head: true }).eq('quote_id', quoteId);
+      await db.from('golden_quotes').update({ likes_count: count }).eq('id', quoteId);
       await loadQuotes();
     }
 
@@ -131,7 +131,7 @@
         const reflection = document.getElementById('quote-reflection').value.trim();
         if (!articleId) { alert('请选择篇目'); return; }
         if (!quote) { alert('请输入金句内容'); return; }
-        await supabase.from('golden_quotes').insert({ user_id: currentUser.id, article_id: parseInt(articleId), quote, reflection: reflection || null });
+        await db.from('golden_quotes').insert({ user_id: currentUser.id, article_id: parseInt(articleId), quote, reflection: reflection || null });
         document.getElementById('quote-text').value = '';
         document.getElementById('quote-reflection').value = '';
         await loadQuotes();

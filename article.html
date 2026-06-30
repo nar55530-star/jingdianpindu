@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>篇目详情 - 经典品读</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
   <link href="https://fonts.googleapis.cn/css2?family=Noto+Serif+SC:wght@400;600;700&family=ZCOOL+XiaoWei&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/style.css">
 </head>
@@ -65,7 +65,7 @@
       if (!articleId) { window.location.href = 'index.html'; return; }
 
       // 加载篇目
-      const { data: article } = await supabase.from('articles').select('*').eq('id', articleId).single();
+      const { data: article } = await db.from('articles').select('*').eq('id', articleId).single();
       if (!article) { window.location.href = 'index.html'; return; }
 
       document.title = article.title + ' - 经典品读';
@@ -96,9 +96,9 @@
       // 检查阅读状态
       if (currentUser) {
         document.getElementById('post-form-section').style.display = 'block';
-        const { data: record } = await supabase.from('reading_records').select('id').eq('user_id', currentUser.id).eq('article_id', articleId).maybeSingle();
+        const { data: record } = await db.from('reading_records').select('id').eq('user_id', currentUser.id).eq('article_id', articleId).maybeSingle();
         isRead = !!record;
-        const { data: fav } = await supabase.from('favorites').select('id').eq('user_id', currentUser.id).eq('target_type', 'article').eq('target_id', String(articleId)).maybeSingle();
+        const { data: fav } = await db.from('favorites').select('id').eq('user_id', currentUser.id).eq('target_type', 'article').eq('target_id', String(articleId)).maybeSingle();
         isFavorited = !!fav;
       }
       renderActionButtons();
@@ -126,10 +126,10 @@
     async function toggleRead() {
       if (!currentUser) { alert('请先设置昵称'); return; }
       if (isRead) {
-        await supabase.from('reading_records').delete().eq('user_id', currentUser.id).eq('article_id', articleId);
+        await db.from('reading_records').delete().eq('user_id', currentUser.id).eq('article_id', articleId);
         isRead = false;
       } else {
-        await supabase.from('reading_records').insert({ user_id: currentUser.id, article_id: articleId });
+        await db.from('reading_records').insert({ user_id: currentUser.id, article_id: articleId });
         isRead = true;
       }
       renderActionButtons();
@@ -138,17 +138,17 @@
     async function toggleFavorite() {
       if (!currentUser) { alert('请先设置昵称'); return; }
       if (isFavorited) {
-        await supabase.from('favorites').delete().eq('user_id', currentUser.id).eq('target_type', 'article').eq('target_id', String(articleId));
+        await db.from('favorites').delete().eq('user_id', currentUser.id).eq('target_type', 'article').eq('target_id', String(articleId));
         isFavorited = false;
       } else {
-        await supabase.from('favorites').insert({ user_id: currentUser.id, target_type: 'article', target_id: String(articleId) });
+        await db.from('favorites').insert({ user_id: currentUser.id, target_type: 'article', target_id: String(articleId) });
         isFavorited = true;
       }
       renderActionButtons();
     }
 
     async function loadPosts() {
-      const { data: posts } = await supabase.from('posts').select('*, users(nickname)').eq('article_id', articleId).order('is_pinned', { ascending: false }).order('created_at', { ascending: false });
+      const { data: posts } = await db.from('posts').select('*, users(nickname)').eq('article_id', articleId).order('is_pinned', { ascending: false }).order('created_at', { ascending: false });
       const container = document.getElementById('posts-list');
       if (!posts || posts.length === 0) {
         container.innerHTML = '<p class="text-[var(--muted)] text-sm">暂无心得，来写第一条吧</p>';
@@ -173,19 +173,21 @@
 
     async function likePost(postId) {
       if (!currentUser) { alert('请先设置昵称'); return; }
-      const { data: existing } = await supabase.from('post_likes').select('id').eq('user_id', currentUser.id).eq('post_id', postId).maybeSingle();
+      const { data: existing } = await db.from('post_likes').select('id').eq('user_id', currentUser.id).eq('post_id', postId).maybeSingle();
       if (existing) {
-        await supabase.from('post_likes').delete().eq('id', existing.id);
-        await supabase.rpc('update_posts_likes_count', { post_id: postId });
+        await db.from('post_likes').delete().eq('id', existing.id);
+        const { count } = await db.from('post_likes').select('*', { count: 'exact', head: true }).eq('post_id', postId);
+        await db.from('posts').update({ likes_count: count }).eq('id', postId);
       } else {
-        await supabase.from('post_likes').insert({ user_id: currentUser.id, post_id: postId });
-        await supabase.rpc('update_posts_likes_count', { post_id: postId });
+        await db.from('post_likes').insert({ user_id: currentUser.id, post_id: postId });
+        const { count } = await db.from('post_likes').select('*', { count: 'exact', head: true }).eq('post_id', postId);
+        await db.from('posts').update({ likes_count: count }).eq('id', postId);
       }
       await loadPosts();
     }
 
     async function loadQuotes() {
-      const { data: quotes } = await supabase.from('golden_quotes').select('*, users(nickname)').eq('article_id', articleId).order('created_at', { ascending: false });
+      const { data: quotes } = await db.from('golden_quotes').select('*, users(nickname)').eq('article_id', articleId).order('created_at', { ascending: false });
       const container = document.getElementById('quotes-list');
       if (!quotes || quotes.length === 0) {
         container.innerHTML = '<p class="text-[var(--muted)] text-sm">暂无金句</p>';
@@ -208,7 +210,7 @@
         if (!currentUser) { alert('请先设置昵称'); return; }
         const content = document.getElementById('post-content').value.trim();
         if (!content) { alert('请输入心得内容'); return; }
-        await supabase.from('posts').insert({ user_id: currentUser.id, article_id: articleId, content });
+        await db.from('posts').insert({ user_id: currentUser.id, article_id: articleId, content });
         document.getElementById('post-content').value = '';
         await loadPosts();
       }

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>管理后台 - 经典品读</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
   <link href="https://fonts.googleapis.cn/css2?family=Noto+Serif+SC:wght@400;600;700&family=ZCOOL+XiaoWei&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/style.css">
 </head>
@@ -70,10 +70,10 @@
     }
 
     async function loadStats() {
-      const { count: ac } = await supabase.from('articles').select('*', { count: 'exact', head: true });
-      const { count: uc } = await supabase.from('users').select('*', { count: 'exact', head: true });
-      const { count: pc } = await supabase.from('posts').select('*', { count: 'exact', head: true });
-      const { count: rc } = await supabase.from('reading_records').select('*', { count: 'exact', head: true });
+      const { count: ac } = await db.from('articles').select('*', { count: 'exact', head: true });
+      const { count: uc } = await db.from('users').select('*', { count: 'exact', head: true });
+      const { count: pc } = await db.from('posts').select('*', { count: 'exact', head: true });
+      const { count: rc } = await db.from('reading_records').select('*', { count: 'exact', head: true });
       document.getElementById('stat-articles').textContent = ac || 0;
       document.getElementById('stat-users').textContent = uc || 0;
       document.getElementById('stat-posts').textContent = pc || 0;
@@ -93,7 +93,7 @@
     }
 
     async function loadArticlesAdmin(container) {
-      const { data: articles } = await supabase.from('articles').select('*').order('sort_order', { ascending: true });
+      const { data: articles } = await db.from('articles').select('*').order('sort_order', { ascending: true });
       if (!articles) { container.innerHTML = '<p class="text-[var(--muted)]">加载失败</p>'; return; }
       container.innerHTML = `
         <div class="mb-4"><button onclick="showAddArticleForm()" class="bg-[var(--primary)] text-[var(--primary-fg)] px-4 py-2 rounded-lg text-sm hover:opacity-90">添加篇目</button></div>
@@ -131,20 +131,20 @@
       const content = document.getElementById('new-content').value.trim();
       const sort_order = parseInt(document.getElementById('new-sort').value) || 1;
       if (!title || !author) { alert('标题和作者必填'); return; }
-      await supabase.from('articles').insert({ title, author, description, content, sort_order });
+      await db.from('articles').insert({ title, author, description, content, sort_order });
       switchAdminTab('articles');
       await loadStats();
     }
 
     async function deleteArticle(id) {
       if (!confirm('确定删除该篇目？')) return;
-      await supabase.from('articles').delete().eq('id', id);
+      await db.from('articles').delete().eq('id', id);
       switchAdminTab('articles');
       await loadStats();
     }
 
     async function loadPostsAdmin(container) {
-      const { data: posts } = await supabase.from('posts').select('*, users(nickname), articles(title)').order('created_at', { ascending: false });
+      const { data: posts } = await db.from('posts').select('*, users(nickname), articles(title)').order('created_at', { ascending: false });
       if (!posts || posts.length === 0) { container.innerHTML = '<p class="text-[var(--muted)] text-center py-8">暂无帖子</p>'; return; }
       container.innerHTML = posts.map(p => {
         const nick = Array.isArray(p.users) ? (p.users[0]?.nickname || '未知') : (p.users?.nickname || '未知');
@@ -167,21 +167,21 @@
     }
 
     async function togglePin(postId, pinned) {
-      await supabase.from('posts').update({ is_pinned: pinned }).eq('id', postId);
+      await db.from('posts').update({ is_pinned: pinned }).eq('id', postId);
       switchAdminTab('posts');
     }
 
     async function deletePost(postId) {
       if (!confirm('确定删除该帖子？')) return;
-      await supabase.from('comments').delete().eq('post_id', postId);
-      await supabase.from('post_likes').delete().eq('post_id', postId);
-      await supabase.from('posts').delete().eq('id', postId);
+      await db.from('comments').delete().eq('post_id', postId);
+      await db.from('post_likes').delete().eq('post_id', postId);
+      await db.from('posts').delete().eq('id', postId);
       switchAdminTab('posts');
       await loadStats();
     }
 
     async function loadAnnouncementsAdmin(container) {
-      const { data: anns } = await supabase.from('announcements').select('*, users(nickname)').order('created_at', { ascending: false });
+      const { data: anns } = await db.from('announcements').select('*, users(nickname)').order('created_at', { ascending: false });
       container.innerHTML = `
         <div class="bg-white rounded-xl border border-[var(--border)] p-6 mb-6">
           <h3 class="font-bold mb-4" style="font-family:'Noto Serif SC',serif;">发布公告</h3>
@@ -207,13 +207,13 @@
       const title = document.getElementById('ann-title').value.trim();
       const content = document.getElementById('ann-content').value.trim();
       if (!title || !content) { alert('标题和内容必填'); return; }
-      await supabase.from('announcements').insert({ title, content, user_id: currentUser.id });
+      await db.from('announcements').insert({ title, content, user_id: currentUser.id });
       switchAdminTab('announcements');
     }
 
     async function deleteAnnouncement(id) {
       if (!confirm('确定删除该公告？')) return;
-      await supabase.from('announcements').delete().eq('id', id);
+      await db.from('announcements').delete().eq('id', id);
       switchAdminTab('announcements');
     }
 

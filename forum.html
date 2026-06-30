@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>心得论坛 - 经典品读</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
   <link href="https://fonts.googleapis.cn/css2?family=Noto+Serif+SC:wght@400;600;700&family=ZCOOL+XiaoWei&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/style.css">
 </head>
@@ -48,7 +48,7 @@
       highlightNav('forum');
 
       // 加载篇目列表
-      const { data: articles } = await supabase.from('articles').select('*').order('sort_order', { ascending: true });
+      const { data: articles } = await db.from('articles').select('*').order('sort_order', { ascending: true });
       if (articles) {
         const filterEl = document.getElementById('article-filter');
         const selectEl = document.getElementById('post-article-select');
@@ -69,7 +69,7 @@
 
       if (currentUser) {
         document.getElementById('post-form').style.display = 'block';
-        const { data: likes } = await supabase.from('post_likes').select('post_id').eq('user_id', currentUser.id);
+        const { data: likes } = await db.from('post_likes').select('post_id').eq('user_id', currentUser.id);
         if (likes) likes.forEach(l => likedPostIds.add(l.post_id));
       }
 
@@ -81,7 +81,7 @@
 
     async function loadPosts() {
       const articleId = document.getElementById('article-filter').value;
-      let query = supabase.from('posts').select('*, users(nickname), articles(title)').order('is_pinned', { ascending: false }).order('created_at', { ascending: false });
+      let query = db.from('posts').select('*, users(nickname), articles(title)').order('is_pinned', { ascending: false }).order('created_at', { ascending: false });
       if (articleId) query = query.eq('article_id', articleId);
       const { data: posts } = await query;
 
@@ -121,15 +121,15 @@
     async function toggleLike(postId) {
       if (!currentUser) { alert('请先设置昵称'); return; }
       if (likedPostIds.has(postId)) {
-        const { data: existing } = await supabase.from('post_likes').select('id').eq('user_id', currentUser.id).eq('post_id', postId).maybeSingle();
-        if (existing) { await supabase.from('post_likes').delete().eq('id', existing.id); likedPostIds.delete(postId); }
+        const { data: existing } = await db.from('post_likes').select('id').eq('user_id', currentUser.id).eq('post_id', postId).maybeSingle();
+        if (existing) { await db.from('post_likes').delete().eq('id', existing.id); likedPostIds.delete(postId); }
       } else {
-        await supabase.from('post_likes').insert({ user_id: currentUser.id, post_id: postId });
+        await db.from('post_likes').insert({ user_id: currentUser.id, post_id: postId });
         likedPostIds.add(postId);
       }
       // 更新计数
-      const { count } = await supabase.from('post_likes').select('*', { count: 'exact', head: true }).eq('post_id', postId);
-      await supabase.from('posts').update({ likes_count: count }).eq('id', postId);
+      const { count } = await db.from('post_likes').select('*', { count: 'exact', head: true }).eq('post_id', postId);
+      await db.from('posts').update({ likes_count: count }).eq('id', postId);
       await loadPosts();
     }
 
@@ -140,7 +140,7 @@
       if (openCommentId) { document.getElementById('comments-' + openCommentId).style.display = 'none'; }
       openCommentId = postId;
 
-      const { data: comments } = await supabase.from('comments').select('*, users(nickname)').eq('post_id', postId).order('created_at', { ascending: true });
+      const { data: comments } = await db.from('comments').select('*, users(nickname)').eq('post_id', postId).order('created_at', { ascending: true });
       let html = '';
       if (comments && comments.length > 0) {
         html += comments.map(c => {
@@ -157,9 +157,9 @@
       if (!currentUser) { alert('请先设置昵称'); return; }
       const input = document.getElementById('comment-input-' + postId);
       if (!input.value.trim()) return;
-      await supabase.from('comments').insert({ post_id: postId, user_id: currentUser.id, content: input.value.trim() });
-      const { count } = await supabase.from('comments').select('*', { count: 'exact', head: true }).eq('post_id', postId);
-      await supabase.from('posts').update({ comments_count: count }).eq('id', postId);
+      await db.from('comments').insert({ post_id: postId, user_id: currentUser.id, content: input.value.trim() });
+      const { count } = await db.from('comments').select('*', { count: 'exact', head: true }).eq('post_id', postId);
+      await db.from('posts').update({ comments_count: count }).eq('id', postId);
       openCommentId = null;
       await loadPosts();
     }
@@ -171,7 +171,7 @@
         const content = document.getElementById('post-content').value.trim();
         if (!articleId) { alert('请选择篇目'); return; }
         if (!content) { alert('请输入心得内容'); return; }
-        await supabase.from('posts').insert({ user_id: currentUser.id, article_id: parseInt(articleId), content });
+        await db.from('posts').insert({ user_id: currentUser.id, article_id: parseInt(articleId), content });
         document.getElementById('post-content').value = '';
         await loadPosts();
       }
